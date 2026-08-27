@@ -1,0 +1,50 @@
+// out:"./MessageRow.css"
+.message-item {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 24px;
+  padding-top: 24px;
+
+  .message-main {
+    width: min(100%, 1000px);
+    display: flex;
+    gap: 12px;
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 600;
+      background-color: #409eff;
+      border-radius: 50%;
+    }
+
+    .message-content {
+      max-width: calc(100% - 48px);
+      padding: 10px 14px;
+      font-size: 15px;
+      line-height: 1.7;
+      word-break: break-word;
+      background-color: #f5f7fa;
+      border-radius: 10px;
+    }
+  }
+
+  &.user .message-main{
+    flex-direction: row-reverse;
+
+    .avatar {
+      background-color: #606266;
+    }
+
+    .message-content {
+      color: #ffffff;
+      background-color: #409eff;
+    }
+  }
+}

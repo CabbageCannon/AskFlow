@@ -1,0 +1,95 @@
+// out: SuggestionCards.css
+.suggestionSection {
+  width: min(100%, 860px);
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 28px;
+  margin: 0 auto;
+  padding: 40px 24px;
+
+  .suggestionHeading {
+    h1 {
+      margin: 0 0 8px;
+      color: #303133;
+      font-size: 30px;
+      line-height: 1.25;
+      text-wrap: balance;
+    }
+
+    p {
+      margin: 0;
+      color: #606266;
+      font-size: 15px;
+      line-height: 1.6;
+      text-wrap: pretty;
+    }
+  }
+
+  .suggestionGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+
+    .suggestionCard {
+      min-height: 124px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 18px;
+      color: #303133;
+      text-align: left;
+      background-color: #ffffff;
+      border: 1px solid #dcdfe6;
+      border-radius: 12px;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background-color: #f7f8fa;
+        border-color: #409eff;
+      }
+
+      &:focus-visible {
+        outline: 2px solid #409eff;
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .suggestionLabel {
+        color: #337ecc;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .suggestionPrompt {
+        font-size: 15px;
+        line-height: 1.55;
+        text-wrap: pretty;
+      }
+    }
+  }
+}
+
+@media (max-width: 680px) {
+  .suggestionSection {
+    justify-content: flex-start;
+    padding: 28px 16px;
+
+    .suggestionHeading {
+      h1 {
+        font-size: 26px;
+      }
+    }
+
+    .suggestionGrid {
+      grid-template-columns: 1fr;
+    }
+  }
+}

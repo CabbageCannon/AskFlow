@@ -1,0 +1,42 @@
+//out:"./HistorySession.css"
+.historySession {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+
+  .historySessionTitle {
+    padding: 0 8px 8px;
+    color: #909399;
+    font-size: 13px;
+  }
+
+  .historySessions {
+    min-height: 0;
+    flex: 1;
+    padding-right: 4px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #c7c9cc transparent;
+
+    .historySessionItem {
+      margin-bottom: 4px;
+      padding: 10px 8px;
+      overflow: hidden;
+      font-size: 14px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      border-radius: 6px;
+      cursor: pointer;
+
+      &:hover {
+        background-color: #ebeef2;
+      }
+
+      &.selected {
+        background-color: #edecf4
+      }
+    }
+  }
+}

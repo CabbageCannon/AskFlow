@@ -1,0 +1,71 @@
+.message-item {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 24px;
+  padding-top: 24px;
+}
+.message-item .message-main {
+  width: min(100%, 1000px);
+  display: flex;
+  gap: 12px;
+}
+.message-item .message-main .avatar {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  background-color: #409eff;
+  border-radius: 50%;
+}
+.message-item .message-main .message-content {
+  max-width: calc(100% - 48px);
+  padding: 10px 14px;
+  font-size: 15px;
+  line-height: 1.7;
+  word-break: break-word;
+  background-color: #f5f7fa;
+  border-radius: 10px;
+}
+.message-item.user .message-main {
+  flex-direction: row-reverse;
+}
+.message-item.user .message-main .avatar {
+  background-color: #606266;
+}
+.message-item.user .message-main .message-content {
+  color: #ffffff;
+  background-color: #409eff;
+}
+.message-item .message-main .message-content .message-error {
+  margin-top: 8px;
+  color: #f56c6c;
+  font-size: 13px;
+}
+.message-item .message-main .message-content .message-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+.message-item .message-main .message-content .message-actions .regenerate-button {
+  height: 28px;
+  padding: 0 10px;
+  color: #606266;
+  font-size: 13px;
+  background-color: #ffffff;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.message-item .message-main .message-content .message-actions .regenerate-button:hover:not(:disabled) {
+  color: #409eff;
+  border-color: #409eff;
+}
+.message-item .message-main .message-content .message-actions .regenerate-button:disabled {
+  color: #c0c4cc;
+  cursor: not-allowed;
+}

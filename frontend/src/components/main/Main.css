@@ -1,0 +1,31 @@
+.main {
+  min-width: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  background-color: #ffffff;
+}
+.main .main-top {
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #c7c9cc transparent;
+}
+.main .main-bottom {
+  flex-shrink: 0;
+  padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
+  background-color: #ffffff;
+  border-top: 1px solid #ebeef2;
+}
+@media (max-width: 768px) {
+  .main .main-top .message-list {
+    padding: 20px 16px;
+  }
+  .main .main-bottom {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+}

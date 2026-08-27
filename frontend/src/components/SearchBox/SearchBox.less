@@ -1,0 +1,138 @@
+// out: SearchBox.css
+.searchBoxWrapper {
+  width: min(100%, 860px);
+  margin: 0 auto;
+
+  .searchBox {
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 8px;
+    background-color: #f7f8fa;
+    border: 1px solid #dcdfe6;
+    border-radius: 12px;
+
+    &:focus-within {
+      border-color: #409eff;
+    }
+
+    textarea {
+      min-width: 0;
+      min-height: 40px;
+      max-height: 160px;
+      flex: 1;
+      padding: 8px 10px;
+      overflow-y: auto;
+      color: #303133;
+      font: inherit;
+      line-height: 1.5;
+      background: transparent;
+      border: 0;
+      outline: none;
+      resize: none;
+
+      &::placeholder {
+        color: #a8abb2;
+      }
+    }
+
+    .searchActions {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: 8px;
+
+      button {
+        flex-shrink: 0;
+        padding: 9px 18px;
+        color: #ffffff;
+        font: inherit;
+        font-size: 14px;
+        background-color: #409eff;
+        border: 0;
+        border-radius: 8px;
+        cursor: pointer;
+
+        &:hover:not(:disabled) {
+          background-color: #337ecc;
+        }
+
+        &:focus-visible {
+          outline: 2px solid #409eff;
+          outline-offset: 2px;
+        }
+
+        &:disabled {
+          color: #c0c4cc;
+          background-color: #ebeef5;
+          cursor: not-allowed;
+        }
+
+        &.voiceButton {
+          width: 38px;
+          height: 38px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          color: #606266;
+          font-size: 17px;
+          background-color: #ffffff;
+          border: 1px solid #dcdfe6;
+
+          &:hover:not(:disabled) {
+            color: #337ecc;
+            background-color: #ecf5ff;
+          }
+
+          &.recording {
+            color: #ffffff;
+            background-color: #409eff;
+            border-color: #409eff;
+          }
+        }
+
+        &.stopButton {
+          background-color: #606266;
+
+          &:hover:not(:disabled) {
+            background-color: #4e5054;
+          }
+        }
+      }
+    }
+  }
+
+  .voiceFeedback {
+    min-height: 20px;
+    padding: 4px 4px 0;
+
+    p {
+      margin: 0;
+      color: #606266;
+      font-size: 12px;
+      line-height: 1.5;
+
+      &.voiceError {
+        color: #c45656;
+      }
+    }
+  }
+}
+
+@media (max-width: 560px) {
+  .searchBoxWrapper {
+    .searchBox {
+      gap: 6px;
+
+      .searchActions {
+        gap: 6px;
+
+        button:not(.voiceButton) {
+          padding: 9px 12px;
+        }
+      }
+    }
+  }
+}
