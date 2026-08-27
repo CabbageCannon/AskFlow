@@ -1,28 +1,34 @@
-import {Client} from "@langchain/langgraph-sdk"
+import {Client, type AIMessage} from "@langchain/langgraph-sdk"
+import type { AiMessage } from "@/type/api"
+
+const API_URL=import.meta.env.VITE_LANGGRAPH_API_URL ?? "http://localhost:2024"
 
 export const langgraphClient=new Client({
-  apiUrl:"http://localhost:2024"
+  apiUrl:API_URL
 })
 
-export async function runRearch(question:string){
+type DeepResearchOptions={
+  messages:AiMessage[],
+  signal?:AbortSignal
+}
+
+export async function* streamDeepResearch({
+  messages,
+  signal,
+}:DeepResearchOptions){
   const stream=langgraphClient.runs.stream(
     null,
     "Deep Researcher",
     {
       input:{
-        messages:[
-          {
-            role:"user",
-            content:question
-          }
-        ]
+        messages
       },
-      streamMode:"updates"
+      streamMode:"updates",
+      signal
     }
   )
 
   for await (const chunk of stream){
-    console.log(chunk.event)
-    console.log(chunk.data)
+    yield chunk
   }
 }

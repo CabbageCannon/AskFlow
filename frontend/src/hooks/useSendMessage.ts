@@ -1,8 +1,7 @@
 import type { AiMessage, ChatRequest } from "@/type/api"
 import { useChatStore, type GenerationTask } from "@/store/chatStore"
 import { useCallback, useEffect, useRef } from "react"
-import { streamChat } from "@/api/chatClient"
-import { ChatClientError } from "@/api/chatClient"
+import { streamDeepResearch } from "@/api/deepResearch"
 
 type activeRequest = GenerationTask & {
   controller: AbortController
@@ -77,38 +76,19 @@ export const useSendMessage = () => {
 
     const aiMessages = buildAiMessage(sessionId, messageId);
 
-    const request: ChatRequest = {
-      requestId,
-      sessionId,
-      messages: aiMessages
-    }
-
     try {
-      for await (const event of streamChat({ request, signal: controller.signal })) {
-        // streamChat会检查requestId是否正确，因此这里无需检查了
-        switch (event.type) {
-          case "delta": {
-            appendMessageChunk(sessionId, messageId, event.content, requestId);
-            break;
-          };
+      for await (const chunk of streamDeepResearch({
+        messages:aiMessages,
+        signal:controller.signal
+      })) {
+        if(chunk.event!="updates")continue
 
-          case "done": {
-            completeMessage(sessionId, messageId, requestId);
-            break;
-          };
+        const data=chunk.data
 
-          case "error": {
-            failMessage(sessionId, messageId, requestId, event.message);
-            break;
-          }
-        }
+        console.log("LangGraph update:",data)
       }
     } catch (error) {
-      const requestWasAborted = controller.signal.aborted
-        || (error instanceof ChatClientError
-          && error.code === "ABORTED"
-        )
-
+      const requestWasAborted = controller.signal.aborted || error.code === "ABORTED"
       if (requestWasAborted) {
         abortMessage(sessionId, messageId, requestId);
         return;

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n web,server \"npm:dev:web\" \"npm:dev:server\"",
+    "dev": "concurrently -k -n web \"npm:dev:web\"",
     "dev:web": "vite",
     "dev:server": "tsx watch server/index.ts",
     "typecheck:server": "tsc --noEmit -p server/tsconfig.json",
