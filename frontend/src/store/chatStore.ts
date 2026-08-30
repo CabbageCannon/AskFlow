@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Session, Message } from "@/type/chat.ts";
+import type { Session, Message,ResearchProgress } from "@/type/chat.ts";
 import { persist } from "zustand/middleware";
 
 export type GenerationTask = {
@@ -27,6 +27,8 @@ type ChatStore = {
   prepareRegenerateMessage: (sessionId: string, messageId: string) => GenerationTask | null,
   createMessage: (sessionId: string, newMessage: Message) => void,
   updateMessage: (sessionId: string, messageId: string, updateContent: string) => void,
+  // 设置智能体运行状态
+  setResearchProgress:(sessionId:string,messageId:string,requestId:string,progress:ResearchProgress | undefined)=>void
 
   setIsAtBottom: (bottom: boolean) => void;
 }
@@ -145,7 +147,12 @@ export const useChatStore = create<ChatStore>()(
               role: "assistant",
               content: "",
               status: "generating",
-              createdAt: createdAt
+              createdAt: createdAt,
+              // 用户已发送就直接显示正在理解，不等后端反应
+              researchProgress:{
+                stage:"understanding",
+                label:"正在理解你的问题"
+              }
             }
 
             task = {
@@ -205,7 +212,8 @@ export const useChatStore = create<ChatStore>()(
                 return {
                   ...message,
                   status: "completed",
-                  error: undefined
+                  error: undefined,
+                  researchProgress:undefined
                 }
               })
             }
@@ -226,7 +234,8 @@ export const useChatStore = create<ChatStore>()(
                 ) return message;
                 return {
                   ...message,
-                  status: "aborted"
+                  status: "aborted",
+                  researchProgress:undefined
                 }
               })
             }
@@ -248,7 +257,8 @@ export const useChatStore = create<ChatStore>()(
                 return {
                   ...message,
                   status: "failed",
-                  error: error
+                  error: error,
+                  researchProgress:undefined
                 }
               })
             }
@@ -383,6 +393,28 @@ export const useChatStore = create<ChatStore>()(
           }
         })
       },
+
+      // 设置当前运行状态
+      setResearchProgress:(sessionId:string,messageId:string,requestId:string,progress:ResearchProgress | undefined)=>{
+        set((state)=>({
+          sessions:state.sessions.map(session=>{
+            if(session.id!==sessionId)return session
+
+            return{
+              ...session,
+              messages:session.messages.map(message=>{
+                if(message.id!==messageId || message.requestId!==requestId)return message
+                
+                return{
+                  ...message,
+                  researchProgress:progress
+                }
+              })
+            }
+          })
+        }))
+      },
+
 
       setIsAtBottom: (bottom: boolean) => {
         set(() => ({

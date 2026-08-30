@@ -32,7 +32,6 @@ const SearchBox = ({ isGenerating, sendMessage, stopMessage }: SearchBoxProps) =
 
     const content = inputValue.trim();
     if (!content || isGenerating) return;
-
     void sendMessage(content);
     setInputValue("");
   };

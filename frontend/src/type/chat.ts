@@ -4,6 +4,17 @@ export type MessageStatus = "pending"
   | "failed"
   | "aborted";
 
+export type ResearchProgress={
+  // 当前智能体运行状态
+  stage:
+    |"understanding"
+    |"planning"
+    |"researching"
+    |"writing",
+  // 运行状态对应图标
+  label:string
+}
+
 export type Message = {
   id: string,
   requestId?: string,
@@ -11,7 +22,9 @@ export type Message = {
   content: string,
   status: MessageStatus,
   createdAt: number,
-  error?: string
+  error?: string,
+
+  researchProgress?:ResearchProgress
 }
 
 export type Session = {

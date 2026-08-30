@@ -1,4 +1,4 @@
-import type { AiMessage, ChatRequest } from "@/type/api"
+import type { AiMessage } from "@/type/api"
 import { useChatStore, type GenerationTask } from "@/store/chatStore"
 import { useCallback, useEffect, useRef } from "react"
 import { streamDeepResearch } from "@/api/deepResearch"
@@ -41,6 +41,7 @@ export const useSendMessage = () => {
   const startGeneration = useChatStore(state => state.startGeneration);
   const prepareRetryMessage = useChatStore(state => state.prepareRetryMessage);
   const prepareRegenerateMessage = useChatStore(state => state.prepareRegenerateMessage);
+  const setResearchProgress=useChatStore(state=>state.setResearchProgress)
 
   // 用于存储不同会话的请求信息
   const activeRequests = useRef(new Map<string, activeRequest>);
@@ -75,20 +76,65 @@ export const useSendMessage = () => {
     })
 
     const aiMessages = buildAiMessage(sessionId, messageId);
-
     try {
-      for await (const chunk of streamDeepResearch({
-        messages:aiMessages,
-        signal:controller.signal
+      let receivedResponse = false
+
+      for await (const event of streamDeepResearch({
+        messages: aiMessages,
+        signal: controller.signal
       })) {
-        if(chunk.event!="updates")continue
+        switch (event.type) {
+          case "progress": {
+            setResearchProgress(
+              sessionId,
+              messageId,
+              requestId,
+              {
+                stage:event.stage,
+                label:event.label
+              }
+            )
+            break
+          }
 
-        const data=chunk.data
+          case "content": {
+            appendMessageChunk(
+              sessionId,
+              messageId,
+              event.content,
+              requestId
+            )
 
-        console.log("LangGraph update:",data)
+            break
+          }
+
+          case "done": {
+            completeMessage(
+              sessionId,
+              messageId,
+              requestId
+            );
+
+            receivedResponse = true;
+
+            break;
+          }
+        }
+      }
+
+      if(!receivedResponse){
+        failMessage(
+          sessionId,
+          messageId,
+          requestId,
+          "研究已结束，但没有收到可显示的结果"
+        )
       }
     } catch (error) {
-      const requestWasAborted = controller.signal.aborted || error.code === "ABORTED"
+      const requestWasAborted = controller.signal.aborted || (
+        error instanceof Error &&
+        error.name==="AbortError"
+      )
       if (requestWasAborted) {
         abortMessage(sessionId, messageId, requestId);
         return;
@@ -172,6 +218,7 @@ export const useSendMessage = () => {
 
     await runGeneration(generationTask);
   }, [currentSessionId, prepareRegenerateMessage, runGeneration])
+
 
   // 使用该Hook的组件卸载时，取消所有仍未完成的请求
   useEffect(() => {

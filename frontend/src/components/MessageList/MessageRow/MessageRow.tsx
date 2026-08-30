@@ -25,13 +25,24 @@ const MessageRow = ({
         {message.role === "user" ? "我" : "AI"}
       </div>
       <div className="message-content">
-        {(message.status === "generating"
-          && message.content === "") ?
-          "正在思考..." :
-          <MarkdownRender content={message.content} />}
+        {/* agent运行过程label */}
+        {
+          (message.status === "generating"
+            && message.content === "") ?
+            <div className="research=-progress">
+              <span className="research-dot">
+
+                {message.researchProgress.label}
+              </span>
+            </div> : null}
+        {
+          message.content ?
+            (<MarkdownRender content={message.content} />) : null
+
+        }
 
         {message.status === "failed" && message.error ? (
-          <div className="message-error">{message.error}</div>
+          <div className="message-error">{"错误"+message.error}</div>
         ) : null}
 
         {canRegenerate ? (
