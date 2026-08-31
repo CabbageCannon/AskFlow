@@ -459,25 +459,26 @@ async def researcher(
         goto="researcher_tools",
         update={
             "researcher_messages": [response],
-            "tool_call_iterations": state.get("tool_call_iterations", 0) + 1,
+            "react_iterations": 1,
         },
     )
 
 
 # 检查当前工具调用错误是否需要重试
-def is_retryable_tool_error(exception:Exception)->bool:
+def is_retryable_tool_error(exception: Exception) -> bool:
     """Determine whether a tool error is likely transient and worth retrying."""
-    
+
     # 1. Python / network level transient errors
-    if isinstance(exception,(TimeoutError,ConnectionError)):return True
+    if isinstance(exception, (TimeoutError, ConnectionError)):
+        return True
 
     # 2. Try to extract an HTTP status code
-    status_code=getattr(exception,"status_code",None)
-    
+    status_code = getattr(exception, "status_code", None)
+
     if status_code is None:
         response = getattr(exception, "response", None)
         status_code = getattr(response, "status_code", None)
-    
+
     if status_code is not None:
         # Rate limiting
         if status_code == 429:
@@ -497,41 +498,46 @@ def is_retryable_tool_error(exception:Exception)->bool:
 
     return False
 
+
+# 控制工具，不计入预算型工具中
+CONTROL_TOOL_NAMES = {"think_tool", "ResearchComplete"}
+
+
+# 验证某个工具调用是否是预算型工具
+def is_budgeted_tool_call(tool_call) -> bool:
+    tool_call_name = tool_call.get("name", "")
+    if tool_call_name in CONTROL_TOOL_NAMES:
+        return False
+    return True
+
+
 # Tool Execution Helper Function
-async def execute_tool_safely(tool, args, config):
+async def execute_tool_safely(tool, args, config, semsphore: asyncio.Semaphore):
     """Safely execute a tool with error handling."""
     configurable = Configuration.from_runnable_config(config)
-    
-    max_attempts=configurable.max_tool_retries+1
-    
-    for attempt in range(1,max_attempts+1):
+
+    max_attempts = configurable.max_tool_retries + 1
+
+    for attempt in range(1, max_attempts + 1):
         try:
-            return await tool.ainvoke(args,config)
-        
+            async with semsphore:
+                return await tool.ainvoke(args, config)
+
         except Exception as e:
-            retryable=is_retryable_tool_error(e)
-            
+            retryable = is_retryable_tool_error(e)
+
             # 非可重试错误：立即失败
             if not retryable:
-                return(
-                    f"Error executing tool:{str(e)}"
-                    f"(non-retryable)"
-                )
-                
-            if attempt>=max_attempts:
-                return(
-                    f"Error executing tool after"
-                    f"{max_attempts} attempts: {str(e)}"
+                return f"Error executing tool:{str(e)}" f"(non-retryable)"
+
+            if attempt >= max_attempts:
+                return (
+                    f"Error executing tool after" f"{max_attempts} attempts: {str(e)}"
                 )
 
-            delay=min(2**(attempt-1),8)
-            
+            delay = min(2 ** (attempt - 1), 8)
+
             await asyncio.sleep(delay)
-    try:
-        tool = tool.with_retry(stop_after_attempt=configurable.max_tool_retry)
-        return await tool.ainvoke(args, config)
-    except Exception as e:
-        return f"Error executing tool: {str(e)}"
 
 
 async def researcher_tools(
@@ -575,37 +581,150 @@ async def researcher_tools(
 
     # Execute all tool calls in parallel
     tool_calls = most_recent_message.tool_calls
+
+    # 当前researcher总共运行了预算型tool的次数
+    current_total_tool_calls = state.get("total_tool_calls", 0)
+
+    # 本次研究剩余的可用预算型工具调用
+    # 这里和0取max是因为有可能运行过程中用户更改配置导致算出来的是负数，这里为了后续运算合理，因此最少都要取0
+    remaining_total_budget = max(
+        configurable.max_total_tool_calls - current_total_tool_calls, 0
+    )
+
+    # 其中的预算型工具list
+    budgeted_tool_calls = [
+        tool_call for tool_call in tool_calls if is_budgeted_tool_call(tool_call)
+    ]
+
+    # 本轮实际最多批准的预算型工具调用
+    allowed_budgeted_count = min(
+        len(budgeted_tool_calls),  # 模型希望调用的预算型工具数
+        configurable.max_tool_calls_per_iteration,  # 配置中允许的每次调用工具最大数
+        remaining_total_budget,  # 配置中限制的每个researcher最大允许调用工具最大数
+    )
+
+    # 允许调用的工具列表
+    allowed_tool_calls = []
+    # 拒绝调用的工具列表
+    rejected_tool_calls = []
+    # 对应预算型工具被拒绝调用的原因
+    rejected_reason_by_id = {}
+
+    # 允许调用的预算型工具数目
+    admitted_budgeted_count = 0
+
+    # 选出可以调用的工具list
+    for tool_call in tool_calls:
+        if not is_budgeted_tool_call(tool_call):
+            allowed_tool_calls.append(tool_call)
+            continue
+
+        if admitted_budgeted_count < allowed_budgeted_count:
+            allowed_tool_calls.append(tool_call)
+            admitted_budgeted_count += 1
+            continue
+
+        rejected_tool_calls.append(tool_call)
+
+        # 这里先判断total budget是因为当两个限制同时触发时,优先告知总的到达上限,表达下一步就进入compression了,没必要再请求一次tool list
+        if admitted_budgeted_count >= remaining_total_budget:
+            rejected_reason_by_id[tool_call["id"]] = (
+                "Skipped because the total research tool budget was exhausted."  # researcher总的tool调用次数到达上限
+            )
+        else:
+            rejected_reason_by_id[tool_call["id"]] = (
+                "Skipped because the per-iteration tool call limit was reached."  # 这一轮单次迭代到达上限
+            )
+
+    print(
+        "[RESEARCH_BUDGET] "
+        f"topic={state.get('research_topic', '')[:50]!r} | "
+        f"react={state.get('react_iterations', 0)}/{configurable.max_react_iterations} | "
+        f"total_before={current_total_tool_calls}/{configurable.max_total_tool_calls} | "
+        f"generated={len(tool_calls)} | "
+        f"budgeted={len(budgeted_tool_calls)} | "
+        f"admitted={admitted_budgeted_count} | "
+        f"rejected={len(rejected_tool_calls)} | "
+        f"remaining_before={remaining_total_budget}"
+    )
+
+    # 创建并发信号量,限制并发数
+    tool_semaphore = asyncio.Semaphore(configurable.max_concurrent_tool_calls)
+
     tool_execution_tasks = [
-        execute_tool_safely(tools_by_name[tool_call["name"]], tool_call["args"], config)
-        for tool_call in tool_calls
+        execute_tool_safely(
+            tools_by_name[tool_call["name"]], tool_call["args"], config, tool_semaphore
+        )
+        for tool_call in allowed_tool_calls
     ]
     observations = await asyncio.gather(*tool_execution_tasks)
 
     # Create tool messages from execution results
-    tool_outputs = [
-        ToolMessage(
+    # 创建ToolMessage
+    tool_outputs_by_id = {}
+
+    # 放入允许调用工具的结果
+    for tool_call, observation in zip(allowed_tool_calls, observations):
+        tool_outputs_by_id[tool_call["id"]] = ToolMessage(
             content=observation, name=tool_call["name"], tool_call_id=tool_call["id"]
         )
-        for observation, tool_call in zip(observations, tool_calls)
-    ]
+
+    # 放入被拒绝调用工具的结果(被拒绝原因，此处分为两类)
+    for tool_call in rejected_tool_calls:
+        tool_outputs_by_id[tool_call["id"]] = ToolMessage(
+            content=rejected_reason_by_id[tool_call["id"]],
+            name=tool_call["name"],
+            tool_call_id=tool_call["id"],
+        )
+
+    # 按照原本传进来的顺序创建outputs
+    tool_outputs = [tool_outputs_by_id[tool_call["id"]] for tool_call in tool_calls]
 
     # Step 3: Check late exit conditions (after processing tools)
-    exceeded_iterations = (
-        state.get("tool_call_iterations", 0) >= configurable.max_react_tool_calls
+    reached_max_iterations = (
+        state.get("react_iterations", 0) >= configurable.max_react_iterations
     )
     research_complete_called = any(
         tool_call["name"] == "ResearchComplete"
         for tool_call in most_recent_message.tool_calls
     )
 
-    if exceeded_iterations or research_complete_called:
+    total_budget_exhausted = (
+        current_total_tool_calls + admitted_budgeted_count
+        >= configurable.max_total_tool_calls
+    )
+
+    next_total_tool_calls = current_total_tool_calls + admitted_budgeted_count
+
+    print(
+        "[RESEARCH_BUDGET] "
+        f"total_after={next_total_tool_calls}/{configurable.max_total_tool_calls} | "
+        f"react_limit={reached_max_iterations} | "
+        f"total_limit={total_budget_exhausted} | "
+        f"research_complete={research_complete_called}"
+    )
+
+    # 到达researcher最大迭代次数 | 工具列表中有complete | 总的工具调用次数上限
+    if reached_max_iterations or research_complete_called or total_budget_exhausted:
+        print("[RESEARCH_BUDGET] route -> compress_research")
         # End research and proceed to compression
         return Command(
-            goto="compress_research", update={"researcher_messages": tool_outputs}
+            goto="compress_research",
+            update={
+                "researcher_messages": tool_outputs,
+                "total_tool_calls": admitted_budgeted_count,
+            },
         )
 
+    print("[RESEARCH_BUDGET] route -> researcher")
     # Continue research loop with tool results
-    return Command(goto="researcher", update={"researcher_messages": tool_outputs})
+    return Command(
+        goto="researcher",
+        update={
+            "researcher_messages": tool_outputs,
+            "total_tool_calls": admitted_budgeted_count,
+        },
+    )
 
 
 async def compress_research(state: ResearcherState, config: RunnableConfig):
