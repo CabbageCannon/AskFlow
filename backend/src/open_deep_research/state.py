@@ -44,6 +44,7 @@ class ClarifyWithUser(BaseModel):
         description="Verify message that we will start research after the user has provided the necessary information.",
     )
 
+# 一个researcher研究的问题
 class ResearchQuestion(BaseModel):
     """Research question and brief for guiding research."""
     
@@ -51,6 +52,34 @@ class ResearchQuestion(BaseModel):
         description="A research question that will be used to guide the research.",
     )
 
+# 研究可靠性相关输出结构
+
+# 冲突资料的详细解释
+class EvidenceConflict(BaseModel):
+    topic:str
+    description:str
+    sources:list[str]=Field(default_factory=list)
+    
+# 资料可靠度详细解释(一般认为官方文档更可靠、个人博客相对没这么可靠)
+class CredibilityIssue(BaseModel):
+    source:str
+    concern:str
+    
+class VerificationResult(BaseModel):
+    # 是否覆盖了用户问题中的全部维度
+    coverage_score:float=Field(ge=0.0,le=1.0)
+    # 资料可靠度
+    credibility_score:float=Field(ge=0.0,le=1.0)
+    
+    credibility_issues:list[CredibilityIssue]=Field(default_factory=list)
+    
+    conflicts:list[EvidenceConflict]=Field(default_factory=list)
+    # 某个结论有没有足够的证据支撑
+    missing_evidence:list[str]=Field(default_factory=list)
+    # 搜索资料是否满意
+    evidence_sufficient:bool
+    # 总结
+    summary:str
 
 ###################
 # State Definitions
@@ -64,9 +93,11 @@ def override_reducer(current_value, new_value):
     else:
         return operator.add(current_value, new_value)
     
+# 总图输入
 class AgentInputState(MessagesState):
     """InputState is only 'messages'."""
 
+# 总图状态
 class AgentState(MessagesState):
     """Main agent state containing messages and research data."""
     
@@ -80,9 +111,12 @@ class AgentState(MessagesState):
     raw_notes: Annotated[list[str], override_reducer] = []
     # 处理后的研究材料
     notes: Annotated[list[str], override_reducer] = []
+    # 搜索资料检查结果
+    verification_result:Optional[VerificationResult]
     # 最终给用户的研究报告
     final_report: str
 
+# supervisor子图状态
 class SupervisorState(TypedDict):
     """State for the supervisor that manages research tasks."""
     
@@ -92,6 +126,7 @@ class SupervisorState(TypedDict):
     research_iterations: int = 0
     raw_notes: Annotated[list[str], override_reducer] = []
 
+# researcher子图状态
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""
     
@@ -108,6 +143,7 @@ class ResearcherState(TypedDict):
     # 搜索得到的原始材料
     raw_notes: Annotated[list[str], override_reducer] = []
 
+# researcher子图输出
 class ResearcherOutputState(BaseModel):
     """Output state from individual researchers."""
     

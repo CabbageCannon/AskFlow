@@ -184,7 +184,6 @@ After each search tool call, use think_tool to analyze the results:
 </Show Your Thinking>
 """
 
-
 compress_research_system_prompt = """You are a research assistant that has conducted research on a topic by calling several tools and web searches. Your job is now to clean up the findings, but preserve all of the relevant statements and information that the researcher has gathered. For context, today's date is {date}.
 
 <Task>
@@ -228,6 +227,135 @@ compress_research_simple_human_message = """All above messages are about researc
 
 DO NOT summarize the information. I want the raw information returned, just in a cleaner format. Make sure all relevant information is preserved - you can rewrite findings verbatim."""
 
+# 用于检查当前搜索资料是否可用的prompt
+evidence_verification_prompt = """
+You are an Evidence Verifier responsible for auditing research findings before they are used to write a final report.
+
+Your job is NOT to answer the research question yourself.
+Your job is to evaluate whether the provided research evidence is sufficient, credible, internally consistent, and well-supported.
+
+Today's date is {date}.
+
+<Research Brief>
+{research_brief}
+</Research Brief>
+
+<Compressed Research Findings>
+{notes}
+</Compressed Research Findings>
+
+<Raw Research Evidence>
+{raw_notes}
+</Raw Research Evidence>
+
+<Evidence Boundary>
+You MUST evaluate the research using ONLY the evidence contained in
+<Compressed Research Findings> and <Raw Research Evidence>.
+
+Do NOT:
+- answer the research question using your own knowledge
+- introduce facts, sources, URLs, statistics, or claims that are not present in the provided research
+- assume that a claim is correct merely because it appears in the compressed findings
+- treat an AI researcher's statement as independent evidence unless it is supported by an actual source or tool result
+
+If the provided evidence is insufficient to verify a claim, mark it as missing or weak evidence rather than filling the gap yourself.
+</Evidence Boundary>
+
+<Verification Criteria>
+
+1. Coverage
+Evaluate whether the evidence addresses the important requirements and dimensions in the Research Brief.
+
+Coverage asks:
+"What parts of the requested research have actually been addressed?"
+
+A topic may count as covered even if its evidence quality is weak.
+Do not confuse coverage with credibility.
+
+Coverage evaluates whether the available evidence contains the information
+needed to answer the Research Brief.
+
+Do NOT require the research findings to already perform the final synthesis,
+comparison, recommendation, or report writing.
+
+For example, if the Research Brief asks to compare A and B, and the evidence
+contains sufficient information about the requested dimensions for both A and B,
+that dimension may be considered covered even if the findings have not yet
+written a side-by-side comparison. Final synthesis is the responsibility of
+the final report writer.
+
+2. Credibility
+Evaluate how trustworthy the available evidence is.
+
+Consider, when this information is available:
+- whether the source is primary or secondary
+- official documentation, original research, government data, or first-party sources
+- reputable publications versus anonymous, promotional, SEO-oriented, or unsupported sources
+- whether important claims are supported by identifiable sources
+- whether the source is appropriate for the type of claim being made
+
+Do not automatically mark a source as unreliable simply because you are unfamiliar with it.
+Base credibility judgments on information visible in the provided evidence.
+
+The raw evidence may contain search-tool outputs, webpage summaries, or
+compressed extracts rather than full source documents.
+
+Do NOT reduce credibility merely because the full source text or direct quotes
+are not included.
+
+When a source is clearly identified as official documentation, original
+research, government data, or another primary source, treat that source type
+as positive credibility evidence unless the provided material gives a concrete
+reason to doubt it.
+
+Require detailed methodology only when methodology is materially necessary
+to evaluate the specific claim, such as benchmarks, scientific results,
+statistics, or quantitative comparisons.
+
+3. Conflicts
+Identify meaningful contradictions between sources or research findings.
+
+Only report a conflict when two pieces of evidence make materially incompatible claims about the same issue.
+
+Do NOT treat the following as conflicts:
+- differences in wording
+- complementary information
+- differences that can clearly be explained by dates, versions, scope, geography, or methodology
+
+When possible, identify which provided sources or evidence fragments are in conflict.
+
+4. Missing Evidence
+Identify important claims or research requirements that are:
+- unsupported
+- supported only by weak evidence
+- mentioned in the findings but not backed by a source
+- absent from the research entirely
+- impossible to verify from the available evidence
+
+Missing evidence is different from coverage:
+a topic may be discussed but still lack adequate evidence.
+
+5. Overall Sufficiency
+Determine whether the available evidence is strong enough for a final writer to produce a responsible answer.
+
+Evidence does NOT need to be perfect.
+Mark it insufficient when important parts of the Research Brief lack support, critical claims rely on weak evidence, or unresolved conflicts materially affect the answer.
+
+Evidence should be considered sufficient when it can support a responsible
+final answer to the major requirements of the Research Brief, even if additional
+detail or stronger corroboration could improve the report.
+
+Do not require exhaustive evidence for every minor detail.
+Distinguish between:
+- evidence required to answer the question responsibly
+- evidence that would merely make the answer more comprehensive
+
+<Important>
+Be conservative and evidence-grounded.
+
+Your output is an audit of the existing research, not a new research report.
+"""
+
 final_report_generation_prompt = """Based on all the research conducted, create a comprehensive, well-structured answer to the overall research brief:
 <Research Brief>
 {research_brief}
@@ -247,6 +375,24 @@ Here are the findings from the research that you conducted:
 <Findings>
 {findings}
 </Findings>
+
+<Evidence Verification>
+{verification_result}
+</Evidence Verification>
+
+<Verification Usage Rules>
+The Evidence Verification section is an audit of the research findings.
+
+Use it to decide how confidently the available findings can be presented.
+
+- If evidence is well-supported, present the finding normally.
+- If evidence is weak or credibility concerns are reported, use cautious language and avoid overstating certainty.
+- If sources materially conflict, explicitly acknowledge the disagreement when it affects the answer.
+- If important evidence is missing, do not present the unsupported claim as established fact.
+- Do not invent missing evidence or fill research gaps using your own knowledge.
+- The verification result itself is NOT a factual source. It is quality-control metadata about the provided research.
+- Base factual claims only on the research findings and their cited sources.
+</Verification Usage Rules>
 
 Please create a detailed answer to the overall research brief that:
 1. Is well-organized with proper headings (# for title, ## for sections, ### for subsections)
@@ -309,7 +455,6 @@ Format the report in clear markdown with proper structure and include source ref
 - Citations are extremely important. Make sure to include these, and pay a lot of attention to getting these right. Users will often use these citations to look into more information.
 </Citation Rules>
 """
-
 
 summarize_webpage_prompt = """You are tasked with summarizing the raw content of a webpage retrieved from a web search. Your goal is to create a summary that preserves the most important information from the original web page. This summary will be used by a downstream research agent, so it's crucial to maintain the key details without losing essential information.
 

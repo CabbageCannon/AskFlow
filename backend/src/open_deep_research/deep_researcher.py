@@ -27,6 +27,7 @@ from open_deep_research.prompts import (
     lead_researcher_prompt,
     research_system_prompt,
     transform_messages_into_research_topic_prompt,
+    evidence_verification_prompt,
 )
 from open_deep_research.state import (
     AgentInputState,
@@ -38,6 +39,7 @@ from open_deep_research.state import (
     ResearcherState,
     ResearchQuestion,
     SupervisorState,
+    VerificationResult,
 )
 from open_deep_research.utils import (
     anthropic_websearch_called,
@@ -843,6 +845,45 @@ researcher_builder.add_edge("compress_research", END)  # Exit point after compre
 researcher_subgraph = researcher_builder.compile()
 
 
+# 检查搜索资料节点(总图)
+async def evidence_verifier(state: AgentState, config: RunnableConfig):
+    configurable = Configuration.from_runnable_config(config)
+    verifier_model_config = {
+        "model": configurable.research_model,  # 暂时先使用researcher_model,后续再修改
+        "max_tokens": configurable.research_model_max_tokens,
+        "api_key": get_api_key_for_model(configurable.research_model, config),
+        "tags": ["langsmith:nostream"],  # 暂时不给前端具体的内部流程，后续可扩展
+    }
+    verification_model = (
+        configurable_model.with_structured_output(VerificationResult)
+        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
+        .with_config(verifier_model_config)
+    )
+
+    # 准备verfier输入
+    researcher_brief = state.get("research_brief", "")
+    notes = state.get("notes", [])
+    raw_notes = state.get("raw_notes", [])
+
+    notes_text = "\n\n".join(notes)
+    raw_notes_text = "\n\n".join(raw_notes)
+
+    # 准备完整prompt
+    prompt_content = evidence_verification_prompt.format(
+        date=get_today_str(),
+        research_brief=researcher_brief,  # 总的研究主题
+        notes=notes_text,  # 最终final_report节点拿到的资料
+        raw_notes=raw_notes_text,  # 原始材料
+    )
+
+    verfication_result = await verification_model.ainvoke(
+        [HumanMessage(content=prompt_content)]
+    )
+
+    # 未来路由固定是到final_report_generation的，因此这里无需使用command
+    return {"verification_result": verfication_result}
+
+
 async def final_report_generation(state: AgentState, config: RunnableConfig):
     """Generate the final comprehensive research report with retry logic for token limits.
 
@@ -862,6 +903,13 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
         "notes": {"type": "override", "value": []}
     }  # 用于更新状态时把notes清空
     findings = "\n".join(notes)
+    verification_result=state.get("verification_result","")
+    # model_dump_json将baseModel转换成json格式字符串
+    verification_result_text=(
+        verification_result.model_dump_json(indent=2)
+        if verification_result
+        else "{}"
+    )
 
     # Step 2: Configure the final report generation model
     configurable = Configuration.from_runnable_config(config)
@@ -885,6 +933,7 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
                 research_brief=state.get("research_brief", ""),
                 messages=get_buffer_string(state.get("messages", [])),
                 findings=findings,
+                verification_result=verification_result_text,
                 date=get_today_str(),
             )
 
@@ -969,14 +1018,20 @@ deep_researcher_builder.add_node(
     "research_supervisor", supervisor_subgraph
 )  # Research execution phase
 deep_researcher_builder.add_node(
+    "evidence_verifier", evidence_verifier
+)  # 搜索资料检查阶段
+deep_researcher_builder.add_node(
     "final_report_generation", final_report_generation
 )  # Report generation phase
 
 # Define main workflow edges for sequential execution
 deep_researcher_builder.add_edge(START, "clarify_with_user")  # Entry point
 deep_researcher_builder.add_edge(
-    "research_supervisor", "final_report_generation"
-)  # Research to report
+    "research_supervisor", "evidence_verifier"
+)  # Research to verifier
+deep_researcher_builder.add_edge(
+    "evidence_verifier","final_report_generation"
+)  # verifier to report
 deep_researcher_builder.add_edge("final_report_generation", END)  # Final exit point
 
 # Compile the complete deep researcher workflow
