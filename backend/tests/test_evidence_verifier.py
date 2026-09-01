@@ -136,9 +136,11 @@ def test_evidence_verifier_sufficient_evidence(monkeypatch):
         )
     )
 
-    assert set(result.keys()) == {"verification_result"}
+    assert set(result.keys()) == {"verification_result","verification_iterations"}
 
     assert result["verification_result"] == expected_verification
+    
+    assert result["verification_iterations"] == 1
 
     assert fake_model.structured_schema is dr.VerificationResult
 

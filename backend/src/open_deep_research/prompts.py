@@ -228,6 +228,7 @@ compress_research_simple_human_message = """All above messages are about researc
 DO NOT summarize the information. I want the raw information returned, just in a cleaner format. Make sure all relevant information is preserved - you can rewrite findings verbatim."""
 
 # 用于检查当前搜索资料是否可用的prompt
+# evidence_sufficient = False也不代表一定要继续,可能出现evidence_sufficient = False但继续搜索其实也拿不到什么有用的东西
 evidence_verification_prompt = """
 You are an Evidence Verifier responsible for auditing research findings before they are used to write a final report.
 
@@ -350,10 +351,114 @@ Distinguish between:
 - evidence required to answer the question responsibly
 - evidence that would merely make the answer more comprehensive
 
+<Evidence Gap Identification>
+
+After evaluating the evidence, identify whether any important unresolved
+issues could benefit from another targeted research round.
+
+A Research Gap is NOT simply every imperfection in the evidence.
+
+Only create a research gap when:
+- it matters materially to the original Research Brief
+- the current evidence is insufficient, weak, or conflicting
+- additional external research has a realistic chance of improving the answer
+
+Each research gap must be narrow, specific, and independently researchable.
+
+Do NOT repeat the entire Research Brief as a research gap.
+
+Bad research gap:
+- "Research DeepSeek"
+- "Research DeepSeek API"
+- "Compare the frameworks again"
+
+Good research gaps:
+- "Current DeepSeek API input and output token pricing"
+- "Official evidence for Framework A's production deployment support"
+- "Resolve the conflicting throughput claims for Framework A"
+
+Classify each gap as one of:
+
+- coverage:
+  An important dimension from the Research Brief is absent or substantially
+  unaddressed.
+
+- credibility:
+  The topic is covered, but the supporting evidence is too weak,
+  secondary, outdated, or otherwise inadequate.
+
+- conflict:
+  Materially incompatible evidence remains unresolved.
+
+For each gap:
+
+1. topic
+   Describe ONLY the unresolved research target.
+
+2. reason
+   Explain why the existing evidence is insufficient and why this gap matters.
+
+3. importance
+   Estimate how important resolving this gap is to answering the Research Brief,
+   from 0.0 to 1.0.
+
+4. expected_information_gain
+   Estimate how much useful NEW information another targeted research round
+   is likely to obtain, from 0.0 to 1.0.
+
+Importance and expected information gain are different.
+
+A gap may be very important but still have low expected information gain
+if repeated searches are unlikely to discover better evidence.
+
+Do NOT create research gaps for:
+- writing or formatting improvements
+- synthesis that should be performed by the final report writer
+- minor details that are unnecessary for answering the user's question
+- issues where further research is unlikely to produce useful new evidence
+
+Avoid overlapping or duplicate research gaps.
+
+Return at most 3 research gaps.
+Prefer the gaps with the highest combination of importance and expected
+information gain.
+
+If the evidence is already sufficient, research_gaps should normally be empty.
+
+If the evidence is insufficient but further research is unlikely to help,
+research_gaps may also be empty.
+</Research Gap Identification>
+
 <Important>
 Be conservative and evidence-grounded.
 
 Your output is an audit of the existing research, not a new research report.
+"""
+
+# 重新研究的prompt
+targeted_research_prompt="""
+You are conducting TARGETED follow-up research.
+
+Overall research context:
+{research_brief}
+
+Unresolved evidence gap:
+{gap_topic}
+
+Why this gap requires follow-up:
+{gap_reason}
+
+Your task:
+Research ONLY the unresolved gap above.
+
+{strategy}
+
+Important scope constraints:
+- Do not restart research on the full original topic.
+- Do not repeat already-covered areas unless they are directly necessary
+  to resolve this specific gap.
+- Focus your searches and tool calls on obtaining NEW evidence for this gap.
+- Stop once this gap has been sufficiently investigated.
 """
 
 final_report_generation_prompt = """Based on all the research conducted, create a comprehensive, well-structured answer to the overall research brief:

@@ -1,173 +1,183 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1720" viewBox="0 0 2400 1720">
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1880" viewBox="0 0 2600 1880">
   <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/></marker>
-    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/></marker>
-    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#059669"/></marker>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#334155"/></marker>
+    <marker id="blueArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/></marker>
+    <marker id="greenArrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#059669"/></marker>
     <style>
-      .title { font-family: SimHei; font-size: 34px; font-weight: 700; fill: #0f172a; }
-      .section { font-family: SimHei; font-size: 24px; font-weight: 700; fill: #0f172a; }
-      .nodeTitle { font-family: SimHei; font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .title { font-family: SimHei; font-size: 36px; font-weight: 700; fill: #0f172a; }
+      .section { font-family: SimHei; font-size: 25px; font-weight: 700; fill: #0f172a; }
+      .node { font-family: SimHei; font-size: 20px; font-weight: 700; fill: #0f172a; }
       .body { font-family: SimHei; font-size: 16px; fill: #334155; }
       .small { font-family: SimHei; font-size: 14px; fill: #475569; }
-      .label { font-family: SimHei; font-size: 14px; font-weight: 700; fill: #334155; }
-      .box { fill: #ffffff; stroke: #94a3b8; stroke-width: 2; }
-      .model { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; }
-      .tool { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
-      .result { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
-      .warning { fill: #fff7ed; stroke: #ea580c; stroke-width: 2; }
-      .decision { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; }
+      .label { font-family: SimHei; font-size: 15px; font-weight: 700; fill: #334155; }
       .group { fill: #f8fafc; stroke: #64748b; stroke-width: 2.5; }
+      .box { fill: #ffffff; stroke: #94a3b8; stroke-width: 2; }
+      .model { fill: #eff6ff; stroke: #2563eb; stroke-width: 2.3; }
+      .tool { fill: #ecfdf5; stroke: #059669; stroke-width: 2.3; }
+      .state { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2.3; }
+      .decision { fill: #fef2f2; stroke: #dc2626; stroke-width: 2.3; }
+      .warn { fill: #fff7ed; stroke: #ea580c; stroke-width: 2.3; }
       .line { fill: none; stroke: #334155; stroke-width: 3; marker-end: url(#arrow); }
-      .blueLine { fill: none; stroke: #2563eb; stroke-width: 3; marker-end: url(#arrowBlue); }
-      .greenLine { fill: none; stroke: #059669; stroke-width: 3; marker-end: url(#arrowGreen); }
-      .dash { fill: none; stroke: #64748b; stroke-width: 2; stroke-dasharray: 8 6; }
+      .blue { fill: none; stroke: #2563eb; stroke-width: 3; marker-end: url(#blueArrow); }
+      .green { fill: none; stroke: #059669; stroke-width: 3; marker-end: url(#greenArrow); }
+      .dash { fill: none; stroke: #7c3aed; stroke-width: 3; stroke-dasharray: 10 7; marker-end: url(#arrow); }
     </style>
   </defs>
 
-  <rect width="2400" height="1720" fill="#ffffff"/>
-  <text x="60" y="62" class="title">Open Deep Research 后端运行流程</text>
-  <text x="60" y="92" class="body">入口：langgraph.json → src/open_deep_research/deep_researcher.py:deep_researcher</text>
+  <rect width="2600" height="1880" fill="#ffffff"/>
+  <text x="55" y="60" class="title">Open Deep Research：后端运行流程（自适应证据补研版）</text>
+  <text x="55" y="91" class="body">入口：langgraph.json → src/open_deep_research/deep_researcher.py:deep_researcher</text>
 
-  <!-- Runtime boundary -->
-  <rect x="50" y="120" width="2300" height="170" rx="10" class="group"/>
-  <text x="76" y="153" class="section">请求与运行配置</text>
-  <rect x="80" y="176" width="315" height="78" rx="8" class="box"/>
-  <text x="105" y="207" class="nodeTitle">LangGraph API / Studio</text>
-  <text x="105" y="233" class="body">提交 messages 与 configurable</text>
-  <rect x="465" y="176" width="290" height="78" rx="8" class="warning"/>
-  <text x="490" y="207" class="nodeTitle">可选认证中间件</text>
-  <text x="490" y="233" class="body">Supabase JWT → 用户 owner</text>
-  <rect x="825" y="160" width="690" height="110" rx="8" class="box"/>
-  <text x="850" y="192" class="nodeTitle">Configuration.from_runnable_config</text>
-  <text x="850" y="218" class="body">环境变量优先，其次是本次 run 的 configurable</text>
-  <text x="850" y="244" class="small">模型、搜索 API、并发数、迭代上限、MCP、重试策略</text>
-  <rect x="1585" y="176" width="660" height="78" rx="8" class="result"/>
-  <text x="1610" y="207" class="nodeTitle">AgentInputState</text>
-  <text x="1610" y="233" class="body">输入状态只有 messages；其余状态在图执行中补齐</text>
-  <path d="M395 215 H465" class="line"/><path d="M755 215 H825" class="line"/><path d="M1515 215 H1585" class="line"/>
+  <!-- Request and state -->
+  <rect x="45" y="120" width="2510" height="174" rx="10" class="group"/>
+  <text x="70" y="154" class="section">请求、配置与总状态</text>
+  <rect x="75" y="180" width="315" height="76" rx="8" class="box"/>
+  <text x="100" y="210" class="node">LangGraph API / Studio</text>
+  <text x="100" y="237" class="body">提交 messages + configurable</text>
+  <rect x="460" y="180" width="355" height="76" rx="8" class="warn"/>
+  <text x="485" y="210" class="node">认证（部署时可选）</text>
+  <text x="485" y="237" class="body">Supabase JWT → 线程 / 存储 owner</text>
+  <rect x="885" y="166" width="690" height="104" rx="8" class="box"/>
+  <text x="910" y="198" class="node">Configuration</text>
+  <text x="910" y="224" class="body">环境变量优先；其次为本次 run 的 configurable</text>
+  <text x="910" y="250" class="small">模型、搜索 API、并发、工具预算、验证轮数、MCP、重试</text>
+  <rect x="1645" y="166" width="830" height="104" rx="8" class="state"/>
+  <text x="1670" y="198" class="node">AgentState</text>
+  <text x="1670" y="224" class="body">messages / research_brief / notes / raw_notes / verification_result</text>
+  <text x="1670" y="250" class="small">verification_iterations / targeted_research_tasks / final_report</text>
+  <path d="M390 218 H460" class="line"/><path d="M815 218 H885" class="line"/><path d="M1575 218 H1645" class="line"/>
 
-  <!-- Main graph -->
-  <rect x="50" y="320" width="2300" height="245" rx="10" class="group"/>
-  <text x="76" y="354" class="section">主图：AgentState</text>
-  <rect x="90" y="390" width="90" height="70" rx="35" class="box"/>
-  <text x="114" y="433" class="nodeTitle">START</text>
-  <rect x="250" y="375" width="355" height="100" rx="8" class="model"/>
-  <text x="275" y="408" class="nodeTitle">clarify_with_user</text>
-  <text x="275" y="434" class="body">结构化输出 ClarifyWithUser</text>
-  <text x="275" y="458" class="small">最多 max_structured_output_retries 次</text>
-  <path d="M180 425 H250" class="blueLine"/>
-  <polygon points="725,370 850,425 725,480 600,425" class="decision"/>
-  <text x="665" y="419" class="nodeTitle">需要澄清？</text><text x="691" y="443" class="small">allow_clarification</text>
-  <path d="M605 425 H600" class="blueLine"/>
-  <rect x="910" y="375" width="390" height="100" rx="8" class="model"/>
-  <text x="935" y="408" class="nodeTitle">write_research_brief</text>
-  <text x="935" y="434" class="body">生成结构化 research_brief</text>
-  <text x="935" y="458" class="small">初始化 supervisor_messages（system + brief）</text>
-  <path d="M850 425 H910" class="blueLine"/>
-  <rect x="1385" y="375" width="390" height="100" rx="8" class="result"/>
-  <text x="1410" y="408" class="nodeTitle">research_supervisor 子图</text>
-  <text x="1410" y="434" class="body">规划、委派、汇总并判断是否完成</text>
-  <text x="1410" y="458" class="small">详情见下方 supervisor / researcher 闭环</text>
-  <path d="M1300 425 H1385" class="line"/>
-  <rect x="1860" y="375" width="390" height="100" rx="8" class="model"/>
-  <text x="1885" y="408" class="nodeTitle">final_report_generation</text>
-  <text x="1885" y="434" class="body">整合 findings，生成最终报告</text>
-  <text x="1885" y="458" class="small">结果写入 messages 与 final_report</text>
-  <path d="M1775 425 H1860" class="blueLine"/>
-  <path d="M725 370 V340 H2110" class="dash"/>
-  <rect x="2040" y="500" width="210" height="42" rx="21" class="decision"/>
-  <text x="2078" y="528" class="nodeTitle">END：请求澄清</text>
-  <path d="M725 480 V521 H2040" class="line"/>
-  <text x="1330" y="545" class="small">用户下一次提交补充消息后，会重新启动一轮主图</text>
+  <!-- Main initial chain -->
+  <rect x="45" y="325" width="2510" height="305" rx="10" class="group"/>
+  <text x="70" y="360" class="section">第一阶段：澄清问题与初次广泛研究</text>
+  <rect x="75" y="420" width="95" height="64" rx="32" class="box"/><text x="100" y="460" class="node">START</text>
+  <rect x="235" y="398" width="365" height="108" rx="8" class="model"/>
+  <text x="260" y="432" class="node">clarify_with_user</text>
+  <text x="260" y="458" class="body">结构化输出 ClarifyWithUser</text>
+  <text x="260" y="483" class="small">allow_clarification；结构化输出最多重试 N 次</text>
+  <path d="M170 452 H235" class="blue"/>
+  <polygon points="745,390 875,452 745,514 615,452" class="decision"/>
+  <text x="682" y="446" class="node">需要用户澄清？</text><text x="699" y="470" class="small">且已启用追问</text>
+  <path d="M600 452 H615" class="blue"/>
+  <text x="884" y="428" class="label">否</text>
+  <rect x="940" y="398" width="395" height="108" rx="8" class="model"/>
+  <text x="965" y="432" class="node">write_research_brief</text>
+  <text x="965" y="458" class="body">生成 research_brief，初始化 supervisor_messages</text>
+  <text x="965" y="483" class="small">system prompt + 标准化后的研究问题</text>
+  <path d="M875 452 H940" class="blue"/>
+  <rect x="1410" y="398" width="460" height="108" rx="8" class="state"/>
+  <text x="1435" y="432" class="node">research_supervisor 子图</text>
+  <text x="1435" y="458" class="body">拆解问题、并发委派 researcher、回收研究摘要</text>
+  <text x="1435" y="483" class="small">完成后产出 notes + raw_notes</text>
+  <path d="M1335 452 H1410" class="line"/>
+  <rect x="1960" y="398" width="515" height="108" rx="8" class="model"/>
+  <text x="1985" y="432" class="node">evidence_verifier</text>
+  <text x="1985" y="458" class="body">审计覆盖度、可信度、冲突与证据缺口</text>
+  <text x="1985" y="483" class="small">结构化输出 VerificationResult</text>
+  <path d="M1870 452 H1960" class="blue"/>
+  <rect x="210" y="545" width="410" height="50" rx="25" class="decision"/>
+  <text x="248" y="577" class="node">END：返回澄清问题，等待下一次 run</text>
+  <path d="M745 514 V570 H620" class="line"/><text x="765" y="540" class="label">是</text>
 
-  <!-- Supervisor -->
-  <rect x="50" y="595" width="2300" height="490" rx="10" class="group"/>
-  <text x="76" y="630" class="section">research_supervisor 子图：SupervisorState</text>
-  <text x="76" y="658" class="small">关键状态：supervisor_messages、research_brief、research_iterations、notes、raw_notes</text>
-  <rect x="90" y="700" width="325" height="110" rx="8" class="model"/>
-  <text x="115" y="735" class="nodeTitle">supervisor</text>
-  <text x="115" y="761" class="body">Research Model + bind_tools</text>
-  <text x="115" y="787" class="small">ConductResearch / ResearchComplete / think_tool</text>
-  <rect x="490" y="700" width="350" height="110" rx="8" class="tool"/>
-  <text x="515" y="735" class="nodeTitle">supervisor_tools</text>
-  <text x="515" y="761" class="body">解析 tool_calls，写回 ToolMessage</text>
-  <text x="515" y="787" class="small">research_iterations 每次 supervisor 调用后 +1</text>
-  <path d="M415 755 H490" class="greenLine"/>
-  <polygon points="990,690 1135,755 990,820 845,755" class="decision"/>
-  <text x="915" y="748" class="nodeTitle">调用了哪类工具？</text>
-  <text x="918" y="772" class="small">或达到退出条件</text>
-  <path d="M840 755 H845" class="greenLine"/>
-  <rect x="1235" y="680" width="385" height="85" rx="8" class="tool"/>
-  <text x="1260" y="714" class="nodeTitle">think_tool</text>
-  <text x="1260" y="740" class="body">反思内容写成 ToolMessage</text>
-  <path d="M1135 720 H1235" class="greenLine"/>
-  <path d="M1427 765 V850 H252 V810" class="greenLine"/>
-  <text x="805" y="844" class="label">继续 supervisor 推理循环</text>
-  <rect x="1235" y="790" width="480" height="115" rx="8" class="tool"/>
-  <text x="1260" y="824" class="nodeTitle">ConductResearch × N</text>
-  <text x="1260" y="850" class="body">最多启动 max_concurrent_research_units 个任务</text>
-  <text x="1260" y="876" class="small">超出部分返回错误 ToolMessage；允许的任务 asyncio.gather 并发</text>
-  <path d="M1135 790 H1235" class="greenLine"/>
-  <rect x="1830" y="700" width="420" height="110" rx="8" class="decision"/>
-  <text x="1855" y="735" class="nodeTitle">结束研究阶段</text>
-  <text x="1855" y="761" class="body">ResearchComplete / 无 tool_calls</text>
-  <text x="1855" y="787" class="small">或 research_iterations 超过上限，或委派执行异常</text>
-  <path d="M1135 755 H1830" class="line"/>
-  <path d="M2040 810 V1135" class="line"/>
-  <text x="2064" y="870" class="label">notes = supervisor 中的 ToolMessage 内容</text>
+  <!-- Supervisor and researcher -->
+  <rect x="45" y="660" width="2510" height="435" rx="10" class="group"/>
+  <text x="70" y="695" class="section">research_supervisor 子图：初次研究的调度闭环</text>
+  <text x="70" y="721" class="small">SupervisorState：supervisor_messages / research_brief / research_iterations / notes / raw_notes</text>
+  <rect x="80" y="760" width="315" height="104" rx="8" class="model"/>
+  <text x="105" y="794" class="node">supervisor</text>
+  <text x="105" y="820" class="body">Research Model + bind_tools</text>
+  <text x="105" y="844" class="small">ConductResearch / think_tool / ResearchComplete</text>
+  <rect x="470" y="760" width="320" height="104" rx="8" class="tool"/>
+  <text x="495" y="794" class="node">supervisor_tools</text>
+  <text x="495" y="820" class="body">解析 tool_calls，写回 ToolMessage</text>
+  <text x="495" y="844" class="small">每轮 supervisor 后 research_iterations +1</text>
+  <path d="M395 812 H470" class="green"/>
+  <polygon points="940,750 1085,812 940,874 795,812" class="decision"/>
+  <text x="865" y="806" class="node">工具 / 退出条件？</text><text x="877" y="830" class="small">按 tool_calls 分流</text>
+  <path d="M790 812 H795" class="green"/>
+  <rect x="1175" y="748" width="430" height="75" rx="8" class="tool"/>
+  <text x="1200" y="780" class="node">think_tool</text><text x="1200" y="805" class="body">反思结果写入 ToolMessage，回到 supervisor</text>
+  <path d="M1085 785 H1175" class="green"/>
+  <path d="M1390 823 V892 H237 V864" class="green"/>
+  <text x="720" y="887" class="label">继续规划与委派</text>
+  <rect x="1175" y="850" width="475" height="100" rx="8" class="tool"/>
+  <text x="1200" y="883" class="node">ConductResearch × N</text>
+  <text x="1200" y="909" class="body">最多 max_concurrent_research_units 个 researcher 并发</text>
+  <text x="1200" y="934" class="small">超出任务返回错误 ToolMessage；允许任务 asyncio.gather</text>
+  <path d="M1085 842 H1175" class="green"/>
+  <rect x="1780" y="760" width="700" height="104" rx="8" class="decision"/>
+  <text x="1805" y="794" class="node">结束初次研究</text>
+  <text x="1805" y="820" class="body">ResearchComplete / 无 tool_calls / 超过 max_researcher_iterations</text>
+  <text x="1805" y="844" class="small">或 researcher 执行异常；提取 supervisor 的 ToolMessage 为 notes</text>
+  <path d="M1085 812 H1780" class="line"/>
+  <path d="M2130 864 V1125" class="line"/>
 
-  <!-- Researcher -->
-  <rect x="90" y="930" width="1600" height="130" rx="8" class="group"/>
-  <text x="115" y="960" class="section">researcher 子图（每个 ConductResearch 独立运行）</text>
-  <rect x="115" y="978" width="275" height="58" rx="8" class="model"/>
-  <text x="137" y="1013" class="nodeTitle">researcher</text><text x="256" y="1013" class="body">研究模型 + 所有工具</text>
-  <rect x="470" y="978" width="315" height="58" rx="8" class="tool"/>
-  <text x="492" y="1013" class="nodeTitle">researcher_tools</text><text x="650" y="1013" class="body">并发执行普通工具</text>
-  <path d="M390 1007 H470" class="greenLine"/>
-  <rect x="865" y="965" width="360" height="84" rx="8" class="tool"/>
-  <text x="887" y="998" class="nodeTitle">工具集合</text>
-  <text x="887" y="1024" class="body">think_tool / Search API / MCP / ResearchComplete</text>
-  <path d="M785 1007 H865" class="greenLine"/>
-  <rect x="1305" y="965" width="340" height="84" rx="8" class="result"/>
-  <text x="1327" y="998" class="nodeTitle">compress_research</text>
-  <text x="1327" y="1024" class="body">压缩 findings，保留 raw_notes</text>
-  <path d="M1225 1007 H1305" class="line"/>
-  <path d="M627 1036 V1050 H252 V1036" class="greenLine"/>
-  <text x="445" y="1055" class="small">有后续搜索需要：工具输出回填 researcher_messages，再循环</text>
-  <text x="875" y="1080" class="small">压缩条件：无 tool_calls 且无原生搜索 / ResearchComplete / 达到 max_react_tool_calls</text>
+  <rect x="80" y="980" width="1570" height="90" rx="8" class="group"/>
+  <text x="105" y="1012" class="node">researcher 子图（每个初次研究任务、每个定向补研任务都会复用）</text>
+  <rect x="105" y="1025" width="235" height="34" rx="6" class="model"/><text x="121" y="1049" class="label">researcher：模型生成工具调用</text>
+  <rect x="410" y="1025" width="315" height="34" rx="6" class="tool"/><text x="426" y="1049" class="label">researcher_tools：预算筛选 + 并发执行</text>
+  <rect x="795" y="1025" width="330" height="34" rx="6" class="tool"/><text x="811" y="1049" class="label">Search API / MCP / think_tool / Complete</text>
+  <rect x="1195" y="1025" width="420" height="34" rx="6" class="state"/><text x="1211" y="1049" class="label">compress_research：compressed_research + raw_notes</text>
+  <path d="M340 1042 H410" class="green"/><path d="M725 1042 H795" class="green"/><path d="M1125 1042 H1195" class="line"/>
+  <text x="105" y="1087" class="small">预算：单轮 max_tool_calls_per_iteration；单 researcher 总计 max_total_tool_calls；实际并发由 max_concurrent_tool_calls 的 Semaphore 限制。</text>
 
-  <!-- Return and report -->
-  <rect x="50" y="1115" width="2300" height="270" rx="10" class="group"/>
-  <text x="76" y="1150" class="section">结果回传与最终报告</text>
-  <rect x="90" y="1190" width="500" height="112" rx="8" class="result"/>
-  <text x="115" y="1225" class="nodeTitle">ResearcherOutputState</text>
-  <text x="115" y="1251" class="body">compressed_research → ConductResearch 的 ToolMessage</text>
-  <text x="115" y="1277" class="body">raw_notes → SupervisorState.raw_notes（便于追踪原始材料）</text>
-  <path d="M1645 1007 H1755 V1246 H590" class="line"/>
-  <rect x="690" y="1190" width="445" height="112" rx="8" class="box"/>
-  <text x="715" y="1225" class="nodeTitle">回到 supervisor</text>
-  <text x="715" y="1251" class="body">研究摘要被作为工具结果供 supervisor 复盘</text>
-  <text x="715" y="1277" class="body">可继续委派，或调用 ResearchComplete</text>
-  <path d="M590 1246 H690" class="line"/>
-  <rect x="1235" y="1190" width="495" height="112" rx="8" class="model"/>
-  <text x="1260" y="1225" class="nodeTitle">final_report_generation</text>
-  <text x="1260" y="1251" class="body">输入：research_brief + 对话 messages + notes（研究摘要）</text>
-  <text x="1260" y="1277" class="body">使用 final_report_model；成功后清空 notes</text>
-  <path d="M1135 1246 H1235" class="blueLine"/>
-  <rect x="1820" y="1190" width="430" height="112" rx="8" class="result"/>
-  <text x="1845" y="1225" class="nodeTitle">END：返回最终报告</text>
-  <text x="1845" y="1251" class="body">final_report + AIMessage 写回 AgentState</text>
-  <text x="1845" y="1277" class="body">最终节点允许流式输出</text>
-  <path d="M1730 1246 H1820" class="blueLine"/>
-  <text x="1250" y="1345" class="small">报告上下文超限：按模型上下文裁剪 findings，最多重试 3 次；非 token 异常立即返回错误信息。</text>
+  <!-- Evidence loop -->
+  <rect x="45" y="1125" width="2510" height="430" rx="10" class="group"/>
+  <text x="70" y="1160" class="section">第二阶段：证据验证与定向补研（新增自适应闭环）</text>
+  <text x="70" y="1187" class="small">初次研究完成后的 notes + raw_notes 进入这里；补研不再回到 supervisor，而是直接复用 researcher 子图。</text>
+  <rect x="75" y="1235" width="385" height="112" rx="8" class="state"/>
+  <text x="100" y="1268" class="node">VerificationResult</text>
+  <text x="100" y="1294" class="body">coverage_score / credibility_score / conflicts</text>
+  <text x="100" y="1320" class="body">missing_evidence / evidence_sufficient / evidence_gaps</text>
+  <path d="M2130 1125 V1291 H460" class="line"/>
+  <rect x="545" y="1235" width="370" height="112" rx="8" class="model"/>
+  <text x="570" y="1268" class="node">route_after_verification</text>
+  <text x="570" y="1294" class="body">决定直接写报告，还是进入定向补研</text>
+  <text x="570" y="1320" class="small">验证轮数、资料充足度、可行动缺口共同决策</text>
+  <path d="M460 1291 H545" class="blue"/>
+  <polygon points="1060,1218 1205,1291 1060,1364 915,1291" class="decision"/>
+  <text x="985" y="1285" class="node">是否值得补研？</text><text x="973" y="1310" class="small">必须同时满足下列条件</text>
+  <path d="M915 1291 H915" class="blue"/>
+  <rect x="1285" y="1210" width="560" height="160" rx="8" class="tool"/>
+  <text x="1310" y="1244" class="node">plan_targeted_research</text>
+  <text x="1310" y="1270" class="body">筛选 expected_information_gain ≥ min_expected_information_gain 的 gaps</text>
+  <text x="1310" y="1296" class="body">按 importance × information_gain 排序，生成 TargetedResearchTask</text>
+  <text x="1310" y="1322" class="small">任务数 ≤ min(max_concurrent_research_units, max_targeted_research_tasks_per_round)</text>
+  <path d="M1205 1291 H1285" class="green"/><text x="1220" y="1270" class="label">是</text>
+  <rect x="1925" y="1210" width="555" height="160" rx="8" class="tool"/>
+  <text x="1950" y="1244" class="node">targeted_research</text>
+  <text x="1950" y="1270" class="body">并发调用 researcher 子图，只研究每个具体 evidence gap</text>
+  <text x="1950" y="1296" class="body">收集 compressed_research / raw_notes，与旧资料做规范化去重</text>
+  <text x="1950" y="1322" class="small">成功有新资料：追加 notes / raw_notes；否则直接写报告</text>
+  <path d="M1845 1291 H1925" class="green"/>
+  <path d="M2202 1370 V1412 H1295" class="line"/>
+  <text x="1640" y="1400" class="label">无新证据 / 无任务</text>
+  <path d="M2202 1370 V1515 H350 V1347" class="dash"/>
+  <text x="1080" y="1540" class="label">有新证据：回到 evidence_verifier，重新审查</text>
+  <rect x="695" y="1408" width="600" height="82" rx="8" class="decision"/>
+  <text x="720" y="1441" class="node">直接写报告的条件（任一成立）</text>
+  <text x="720" y="1467" class="body">达到 max_verification_iteration / evidence_sufficient / 无可行动 gaps / 无新资料 / 防御性缺省</text>
+  <path d="M1060 1364 V1408" class="line"/><text x="1080" y="1392" class="label">否</text>
+
+  <!-- Report -->
+  <rect x="45" y="1590" width="2510" height="190" rx="10" class="group"/>
+  <text x="70" y="1625" class="section">第三阶段：最终报告</text>
+  <rect x="75" y="1660" width="740" height="78" rx="8" class="model"/>
+  <text x="100" y="1692" class="node">final_report_generation</text>
+  <text x="100" y="1718" class="body">输入 research_brief + messages + notes + verification_result，使用 final_report_model</text>
+  <rect x="910" y="1660" width="730" height="78" rx="8" class="warn"/>
+  <text x="935" y="1692" class="node">异常与重试</text>
+  <text x="935" y="1718" class="body">上下文超限时裁剪 findings，最多重试 3 次；其他错误直接返回错误消息</text>
+  <rect x="1735" y="1660" width="745" height="78" rx="8" class="state"/>
+  <text x="1760" y="1692" class="node">END：返回最终报告</text>
+  <text x="1760" y="1718" class="body">final_report + AIMessage 写入 AgentState；notes 在成功或错误路径中清空</text>
+  <path d="M1295 1490 V1699 H815" class="blue"/><path d="M815 1699 H910" class="blue"/><path d="M1640 1699 H1735" class="blue"/>
 
   <!-- Legend -->
-  <rect x="50" y="1420" width="2300" height="220" rx="10" class="group"/>
-  <text x="76" y="1455" class="section">读图要点</text>
-  <rect x="90" y="1485" width="24" height="24" class="model"/><text x="126" y="1504" class="body">蓝色：模型调用 / 结构化输出</text>
-  <rect x="430" y="1485" width="24" height="24" class="tool"/><text x="466" y="1504" class="body">绿色：工具调用 / 外部检索</text>
-  <rect x="770" y="1485" width="24" height="24" class="result"/><text x="806" y="1504" class="body">紫色：状态或子图输出</text>
-  <rect x="1110" y="1485" width="24" height="24" class="decision"/><text x="1146" y="1504" class="body">红色：分支与结束条件</text>
-  <text x="90" y="1555" class="body">Tavily 路径会额外执行：并发检索 → URL 去重 → 网页摘要（structured Summary）→ 格式化来源；OpenAI / Anthropic 可走模型原生 Web Search。</text>
-  <text x="90" y="1592" class="body">代码定位：deep_researcher.py（图与节点）、state.py（共享状态）、configuration.py（运行参数）、utils.py（搜索 / MCP / 重试）、security/auth.py（认证）。</text>
+  <rect x="45" y="1810" width="2510" height="45" rx="8" class="group"/>
+  <rect x="75" y="1823" width="20" height="20" class="model"/><text x="106" y="1840" class="small">蓝：模型 / 结构化输出</text>
+  <rect x="350" y="1823" width="20" height="20" class="tool"/><text x="381" y="1840" class="small">绿：工具、任务规划与外部检索</text>
+  <rect x="710" y="1823" width="20" height="20" class="state"/><text x="741" y="1840" class="small">紫：状态 / 子图结果</text>
+  <rect x="1015" y="1823" width="20" height="20" class="decision"/><text x="1046" y="1840" class="small">红：路由与结束条件</text>
+  <text x="1400" y="1840" class="small">虚线：自适应补研后的证据回流；代码定位：deep_researcher.py / state.py / configuration.py / prompts.py。</text>
 </svg>

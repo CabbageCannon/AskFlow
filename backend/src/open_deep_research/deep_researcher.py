@@ -28,6 +28,7 @@ from open_deep_research.prompts import (
     research_system_prompt,
     transform_messages_into_research_topic_prompt,
     evidence_verification_prompt,
+    targeted_research_prompt,
 )
 from open_deep_research.state import (
     AgentInputState,
@@ -40,6 +41,8 @@ from open_deep_research.state import (
     ResearchQuestion,
     SupervisorState,
     VerificationResult,
+    EvidenceGap,
+    TargetedResearchTask,
 )
 from open_deep_research.utils import (
     anthropic_websearch_called,
@@ -402,6 +405,18 @@ supervisor_builder.add_edge(START, "supervisor")  # Entry point to supervisor
 
 # Compile supervisor subgraph for use in main workflow
 supervisor_subgraph = supervisor_builder.compile()
+
+
+# 返回当前全局剩余可以调用预算型工具的次数
+def get_remaining_global_research_budget(
+    state,
+    config: RunnableConfig,
+) -> int:
+    configurable = Configuration.from_runnable_config(config)
+
+    used = state.get("total_research_tool_calls", 0)
+
+    return max(configurable.max_global_research_tool_calls - used, 0)  # 不希望返回负数
 
 
 async def researcher(
@@ -845,6 +860,40 @@ researcher_builder.add_edge("compress_research", END)  # Exit point after compre
 researcher_subgraph = researcher_builder.compile()
 
 
+# 过滤Evidence_gap列表中预期信息收益低的那些
+def get_actionable_evidence_gaps(
+    state: AgentState,
+    config: RunnableConfig,
+) -> list[EvidenceGap]:
+    """Return evidence gaps worth another targeted research round."""
+
+    configurable = Configuration.from_runnable_config(config)
+
+    verification_result = state.get("verification_result")
+
+    if not verification_result:
+        return []
+
+    actionable_gaps = [
+        gap
+        for gap in verification_result.evidence_gaps
+        if (gap.expected_information_gain >= configurable.min_expected_information_gain)
+    ]
+
+    actionable_gaps.sort(
+        key=lambda gap: (gap.importance * gap.expected_information_gain),
+        reverse=True,
+    )
+
+    # 最大的researcher并发数和每轮targeted_research允许最大的researcher数
+    max_actionable_gaps = min(
+        configurable.max_concurrent_research_units,
+        configurable.max_targeted_research_tasks_per_round,
+    )
+
+    return actionable_gaps[:max_actionable_gaps]
+
+
 # 检查搜索资料节点(总图)
 async def evidence_verifier(state: AgentState, config: RunnableConfig):
     configurable = Configuration.from_runnable_config(config)
@@ -876,12 +925,361 @@ async def evidence_verifier(state: AgentState, config: RunnableConfig):
         raw_notes=raw_notes_text,  # 原始材料
     )
 
-    verfication_result = await verification_model.ainvoke(
+    verification_result = await verification_model.ainvoke(
         [HumanMessage(content=prompt_content)]
     )
 
+    print(
+        "[EVIDENCE_VERIFIER] "
+        f"result={verification_result!r} | "
+        f"type={type(verification_result)}"
+    )
+
     # 未来路由固定是到final_report_generation的，因此这里无需使用command
-    return {"verification_result": verfication_result}
+    return {
+        "verification_result": verification_result,
+        "verification_iterations": 1,  # 审查迭代
+    }
+
+
+# 审查后的路由节点
+async def route_after_verification(
+    state: AgentState, config: RunnableConfig
+) -> Command[Literal["plan_targeted_research", "final_report_generation"]]:
+    """Decide whether evidence quality justifies another research round."""
+
+    configurable = Configuration.from_runnable_config(config)
+
+    verification_result = state.get("verification_result")
+
+    verification_iterations = state.get(
+        "verification_iterations",
+        0,
+    )
+
+    # 1.Hard Stop(是否到达审查上限)->final
+    if verification_iterations >= configurable.max_verification_iterations:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=max_verification_iterations"
+        )
+        return Command(goto="final_report_generation")
+
+    # 2.Soft Stop:Verifier认为资料已足够->final
+    if verification_result and verification_result.evidence_sufficient:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=evidence_sufficient"
+        )
+
+        return Command(goto="final_report_generation")
+
+    # 3.没有审查结果时,Fail Safe->final 这里肯定是流程哪里出错了,因为当前节点只能verifier进入,不会没有verification_result
+    if not verification_result:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=missing_verification_result"
+        )
+
+        return Command(goto="final_report_generation")
+
+    # 拿到有价值的gap
+    actionable_gaps = get_actionable_evidence_gaps(
+        state,
+        config,
+    )
+
+    # 4.没有值得补的gap时->final
+    # 即使审查节点标识当前不满意,但是所需的gap都没有搜索的价值,那也直接final
+    if not actionable_gaps:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=no_actionable_evidence_gaps"
+        )
+
+        return Command(goto="final_report_generation")
+
+    # 除以上4种情况，一律进入plan_targeted_research节点
+    print(
+        "[ADAPTIVE_RESEARCH] "
+        "route -> plan_targeted_research | "
+        f"actionable_gaps={len(actionable_gaps)} | "
+        f"verification_iterations={verification_iterations}/"
+        f"{configurable.max_verification_iterations}"
+    )
+
+    return Command(goto="plan_targeted_research")
+
+
+# 根据gap不同的type设置不同策略并返回prompt
+def build_targeted_research_instruction(gap: EvidenceGap, research_brief: str) -> str:
+    """Convert one evidence gap into a narrowly scoped research task."""
+    if gap.gap_type == "coverage":
+        strategy = (
+            "Find evidence specifically for this missing topic. "
+            "Prioritize authoritative and primary sources when available."
+        )
+
+    elif gap.gap_type == "credibility":
+        strategy = (
+            "Find stronger evidence for this topic. "
+            "Prioritize first-party documentation, primary sources, "
+            "official data, or other authoritative evidence over weak "
+            "secondary sources."
+        )
+
+    else:
+        strategy = (
+            "Investigate the conflicting evidence specifically. "
+            "Determine whether the disagreement can be explained by "
+            "date, version, scope, methodology, geography, or another "
+            "material difference. Prefer authoritative sources that can "
+            "help resolve the conflict."
+        )
+
+    return targeted_research_prompt.format(
+        research_brief=research_brief,
+        gap_topic=gap.topic,
+        gap_reason=gap.reason,
+        strategy=strategy,
+    ).strip()
+
+
+# 基于审查出来的缺口生成给researcher的新任务
+async def plan_targeted_research(state: AgentState, config: RunnableConfig):
+    """Convert verifier evidence gaps into targeted follow-up research tasks."""
+    verification_result = state.get("verification_result")
+
+    if not verification_result:
+        return {"targeted_research_tasks": []}
+
+    evidence_gaps = get_actionable_evidence_gaps(state, config)
+
+    if not evidence_gaps:
+        return {"targeted_research_tasks": []}
+
+    research_brief = state.get("research_brief", "")
+
+    tasks = []
+
+    for gap in evidence_gaps:
+        research_topic = build_targeted_research_instruction(
+            gap,
+            research_brief,
+        )
+
+        priority = gap.importance * gap.expected_information_gain
+
+        tasks.append(
+            TargetedResearchTask(
+                gap_type=gap.gap_type,
+                gap_topic=gap.topic,
+                research_topic=research_topic,
+                priority=priority,
+            )
+        )
+
+    tasks.sort(key=lambda task: task.priority, reverse=True)
+
+    print(
+        "[ADAPTIVE_RESEARCH] "
+        "planned targeted research | "
+        f"tasks={len(tasks)} | "
+        f"topics={[task.gap_topic for task in tasks]}"
+    )
+
+    return {"targeted_research_tasks": tasks}
+
+
+# 标准化资料文本
+def normalize_evidence_text(text: str) -> str:
+    """Normalize evidence text for lightweight duplicate detection."""
+    return " ".join(str(text).split())  # 按任意空格 \n 来切分成数组
+
+
+# 过滤新资料中与就资料重复的资料
+def filter_new_evidence(
+    existing_items: list[str],
+    candidate_items: list[str],
+) -> list[str]:
+    """Remove empty and exact/whitespace-equivalent duplicate evidence."""
+    seen = {
+        normalize_evidence_text(item)
+        for item in existing_items
+        if normalize_evidence_text(item)
+    }
+
+    new_items = []
+
+    for item in candidate_items:
+        text = str(item).strip()
+
+        if not text:
+            continue
+
+        normalized = normalize_evidence_text(text)
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        new_items.append(text)
+
+    return new_items
+
+
+# 进行重新搜索
+async def targeted_research(
+    state: AgentState, config: RunnableConfig
+) -> Command[Literal["evidence_verifier", "final_report_generation"]]:
+    """Execute targeted follow-up research without re-entering the Supervisor."""
+
+    tasks = state.get("targeted_research_tasks", [])
+
+    print(
+        "[ADAPTIVE_RESEARCH] "
+        "targeted research start | "
+        f"tasks={len(tasks)} | "
+        f"gaps={[task.gap_topic for task in tasks]}"
+    )
+
+    # 理论上Router 和 Planner已保证这里有任务，再做一次防御
+    # Defensive fallback.
+    if not tasks:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=no_targeted_research_tasks"
+        )
+
+        return Command(
+            goto="final_report_generation",
+            update={
+                "targeted_research_tasks": [],
+            },
+        )
+
+    research_jobs = [
+        researcher_subgraph.ainvoke(
+            {
+                "researcher_messages": [HumanMessage(content=task.research_topic)],
+                "research_topic": (task.research_topic),
+            },
+            config,
+        )
+        for task in tasks
+    ]
+
+    results = await asyncio.gather(
+        *research_jobs, return_exceptions=True  # 其中某个任务出错不会进入整个exception
+    )
+
+    # 收集新的evidence
+    candidate_notes = []
+    candidate_raw_notes = []
+
+    # 记录正常返回结果的researcher子图,但不保证researcher内部节点运行正常,比如压缩节点出错,这里里面会自己处理错误最终返回字符串
+    completed_tasks = 0
+
+    for task, result in zip(
+        tasks,
+        results,
+    ):
+        # 如果失败
+        if isinstance(result, Exception):
+            print(
+                "[ADAPTIVE_RESEARCH] "
+                "targeted task failed | "
+                f"gap={task.gap_topic!r} | "
+                f"error={result}"
+            )
+            continue
+
+        # 如果成功
+        compressed_research = str(
+            result.get(
+                "compressed_research",
+                "",
+            )
+        ).strip()
+
+        raw_notes = result.get(
+            "raw_notes",
+            [],
+        )
+
+        # 判断压缩结果并保留压缩资料
+        if compressed_research and not compressed_research.startswith(
+            "Error synthesizing research report"
+        ):
+            candidate_notes.append(compressed_research)
+
+        # 保留原始资料
+        candidate_raw_notes.extend(str(note) for note in raw_notes if str(note).strip())
+
+        completed_tasks += 1
+
+    # 和已有资料去重
+    existing_notes = state.get(
+        "notes",
+        [],
+    )
+
+    existing_raw_notes = state.get(
+        "raw_notes",
+        [],
+    )
+
+    new_notes = filter_new_evidence(
+        existing_notes,
+        candidate_notes,
+    )
+
+    new_raw_notes = filter_new_evidence(
+        existing_raw_notes,
+        candidate_raw_notes,
+    )
+
+    # 1.如果没有搜出任何有价值的资料，直接->final
+    if not new_notes and not new_raw_notes:
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=no_new_evidence | "
+            f"completed_tasks={completed_tasks}"
+        )
+
+        return Command(
+            goto="final_report_generation",
+            update={
+                "targeted_research_tasks": [],
+            },
+        )
+
+    # 2.放入notes和raw_notes中，并清空任务列表，为下一轮补充搜索做准备
+    print(
+        "[ADAPTIVE_RESEARCH] "
+        "route -> evidence_verifier | "
+        f"tasks={len(tasks)} | "
+        f"completed={completed_tasks} | "
+        f"new_notes={len(new_notes)} | "
+        f"new_raw_notes={len(new_raw_notes)}"
+    )
+
+    return Command(
+        goto="evidence_verifier",
+        update={
+            "notes": new_notes,
+            "raw_notes": new_raw_notes,
+            # 当前这一批任务已经执行完，
+            # 必须清空，不能下一轮重复执行。
+            "targeted_research_tasks": [],
+        },
+    )
 
 
 async def final_report_generation(state: AgentState, config: RunnableConfig):
@@ -903,12 +1301,10 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
         "notes": {"type": "override", "value": []}
     }  # 用于更新状态时把notes清空
     findings = "\n".join(notes)
-    verification_result=state.get("verification_result","")
+    verification_result = state.get("verification_result", "")
     # model_dump_json将baseModel转换成json格式字符串
-    verification_result_text=(
-        verification_result.model_dump_json(indent=2)
-        if verification_result
-        else "{}"
+    verification_result_text = (
+        verification_result.model_dump_json(indent=2) if verification_result else "{}"
     )
 
     # Step 2: Configure the final report generation model
@@ -1021,6 +1417,17 @@ deep_researcher_builder.add_node(
     "evidence_verifier", evidence_verifier
 )  # 搜索资料检查阶段
 deep_researcher_builder.add_node(
+    "route_after_verification", route_after_verification
+)  # 审查后路由
+deep_researcher_builder.add_node(
+    "plan_targeted_research",
+    plan_targeted_research,
+)  # 根据审查结果撰写补充research任务
+deep_researcher_builder.add_node(
+    "targeted_research",
+    targeted_research,
+)  # 进行补充research
+deep_researcher_builder.add_node(
     "final_report_generation", final_report_generation
 )  # Report generation phase
 
@@ -1030,8 +1437,11 @@ deep_researcher_builder.add_edge(
     "research_supervisor", "evidence_verifier"
 )  # Research to verifier
 deep_researcher_builder.add_edge(
-    "evidence_verifier","final_report_generation"
-)  # verifier to report
+    "evidence_verifier", "route_after_verification"
+)  # verifier->router
+deep_researcher_builder.add_edge(
+    "plan_targeted_research", "targeted_research"
+)  # plan->targeted_research
 deep_researcher_builder.add_edge("final_report_generation", END)  # Final exit point
 
 # Compile the complete deep researcher workflow

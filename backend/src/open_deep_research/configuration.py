@@ -99,7 +99,7 @@ class Configuration(BaseModel):
             }
         },
     )
-    # supervisor层的，控制其分配researcher的次数，每分配一轮researcher就+1
+    # supervisor层的，控制其调用工具次数,包括conductResearcher think_tool ResearchComplete
     max_researcher_iterations: int = Field(
         default=6,
         metadata={
@@ -113,6 +113,24 @@ class Configuration(BaseModel):
             }
         },
     )
+    # 单次targeted_research允许分配的最大任务数(也就是可以分配的最大researcher数)
+    max_targeted_research_tasks_per_round: int = Field(
+    default=3,
+    ge=1,
+    metadata={
+        "x_oap_ui_config": {
+            "type": "slider",
+            "default": 3,
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "description": (
+                "Maximum number of targeted follow-up research tasks "
+                "allowed in a single adaptive research round."
+            ),
+        }
+    },
+)
     # 一个researcher最多迭代的次数
     max_react_iterations: int = Field(
         default=10,
@@ -196,6 +214,41 @@ class Configuration(BaseModel):
     )
     # 最大的允许重试的次数
     max_tool_retries: int = Field(default=3)
+    # Verification
+    # 最大审查次数
+    max_verification_iterations:int = Field(
+        default=3,
+        ge=1,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "slider",
+                "default": 3,
+                "min": 1,
+                "max": 10,
+                "step": 1,
+                "description": "Maximum number of evidence verification rounds,including the initial verification after research.",
+            }
+        },
+    )
+    # 最低预期信息收益
+    min_expected_information_gain:float=Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+        metadata={
+            "x_oap_ui_config": {
+            "type": "number",
+            "default": 0.30,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.05,
+            "description": (
+                "Minimum expected information gain required for an "
+                "evidence gap to justify targeted follow-up research."
+            ),
+        }
+        }
+    )
     # Model Configuration
     summarization_model: str = Field(
         default="deepseek:deepseek-v4-flash",
