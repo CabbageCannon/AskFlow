@@ -1,7 +1,8 @@
 """Main LangGraph implementation for the Deep Research agent."""
 
 import asyncio
-from typing import Literal
+from typing import Literal,Any
+import random
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (
@@ -55,6 +56,16 @@ from open_deep_research.utils import (
     openai_websearch_called,
     remove_up_to_last_ai_message,
     think_tool,
+)
+from open_deep_research.tool_recovery import(
+    RetryPolicy,
+    classify_tool_error,
+    infer_tool_policy,
+    ToolExecutionResult
+)
+from open_deep_research.search_fallback import (
+    SearchFallbackPolicy,
+    resolve_search_fallback_tool
 )
 
 # Initialize a configurable model that we will use throughout the agent
@@ -527,35 +538,159 @@ def is_budgeted_tool_call(tool_call) -> bool:
         return False
     return True
 
-
-# Tool Execution Helper Function
-async def execute_tool_safely(tool, args, config, semsphore: asyncio.Semaphore):
-    """Safely execute a tool with error handling."""
+async def execute_tool_with_recovery_result(
+    tool,args,config,semaphore:asyncio.Semaphore
+)->ToolExecutionResult:
+    """Execute a tool and return structured recovery state."""
     configurable = Configuration.from_runnable_config(config)
-
-    max_attempts = configurable.max_tool_retries + 1
+    
+    # 最大重试次数
+    max_retries=configurable.max_tool_retries
+    # 工具尝试最大次数
+    max_attempts = max_retries + 1
+    
+    # 拿到这类工具的策略
+    tool_policy=infer_tool_policy(tool)
+    retry_policy=RetryPolicy()
 
     for attempt in range(1, max_attempts + 1):
         try:
-            async with semsphore:
-                return await tool.ainvoke(args, config)
+            async with semaphore:
+                output= await tool.ainvoke(args, config)
+                
+            # 工具运行成功
+            return ToolExecutionResult(
+                output=output,
+                error=None,
+                exception=None,
+                attempts=attempt,
+                retry_budget_exhausted=False,
+                decision=None
+            )
 
         except Exception as e:
-            retryable = is_retryable_tool_error(e)
+            error_info=classify_tool_error(e)
+            
+            # 拿到重试决定
+            decision=retry_policy.should_retry(
+                error=error_info,\
+                tool=tool_policy,
+                attempt=attempt,
+                max_retries=max_retries
+            )
+            
+            print(
+                "[TOOL_RECOVERY] "
+                f"tool={tool_policy.name!r} | "
+                f"kind={tool_policy.kind.value} | "
+                f"attempt={attempt}/{max_attempts} | "
+                f"category={error_info.category.value} | "
+                f"status={error_info.status_code} | "
+                f"transient={error_info.transient} | "
+                f"idempotent={tool_policy.idempotent} | "
+                f"retry={decision.should_retry} | "
+                f"reason={decision.reason}"
+            )
 
-            # 非可重试错误：立即失败
-            if not retryable:
-                return f"Error executing tool:{str(e)}" f"(non-retryable)"
-
-            if attempt >= max_attempts:
-                return (
-                    f"Error executing tool after" f"{max_attempts} attempts: {str(e)}"
+            if not decision.should_retry:
+                return ToolExecutionResult(
+                    output=None,
+                    error=error_info,
+                    exception=e,
+                    attempts=attempt,
+                    retry_budget_exhausted=(
+                        decision.reason == "retry_budget_exhausted"
+                    ),
+                    decision=decision,
                 )
 
-            delay = min(2 ** (attempt - 1), 8)
+            # 指数退让，基础等待最多8秒
+            base_delay = min(2 ** (attempt - 1), 8)
 
+            # 增加一个随机的摆动，避免大量工具同时失败，同时重试
+            jitter=random.uniform(0,1)
+            
+            delay=base_delay+jitter
+            
+            print(
+                "[TOOL_RECOVERY] "
+                f"tool={tool_policy.name!r} | "
+                f"retry_in={delay:.2f}s"
+            )
+            
             await asyncio.sleep(delay)
+            
+    # 最终无论什么情况都会成功返回ToolExecuteResult,不会走到这里
+    raise RuntimeError("unreachable tool recovery state")
+    
+# Tool Execution Helper Function
+# fallback_tool为备选搜索源
+async def execute_tool_safely(tool, args, config, semaphore: asyncio.Semaphore,fallback_tool=None):
+    """Execute a tool with infrastructure-level failure recovery."""
+    result=await execute_tool_with_recovery_result(
+        tool,
+        args,
+        config,
+        semaphore
+    )
+    
+    # 运行成功直接返回
+    if result.output:
+        return result.output
 
+    # 理论上没有运行成功的话,这些一定不是None
+    assert result.error is not None
+    assert result.exception is not None
+    assert result.decision is not None
+
+    # 使用fallback_tool重试
+    if fallback_tool is not None:
+        primary_policy=infer_tool_policy(tool)
+        fallback_policy=infer_tool_policy(fallback_tool)
+        
+        fallback_decision=SearchFallbackPolicy().decide(
+            error=result.error,
+            tool=primary_policy,
+            primary_provider=primary_policy.name,
+            fallback_provider=fallback_policy.name,
+            retries_exhausted=result.retry_budget_exhausted,
+            fallback_used=False
+        )
+        
+        print(
+            "[SEARCH_FALLBACK] "
+            f"primary={primary_policy.name!r} | "
+            f"fallback={fallback_policy.name!r} | "
+            f"allowed={fallback_decision.should_fallback} | "
+            f"reason={fallback_decision.reason}"
+        )
+        
+        if fallback_decision.should_fallback:
+            fallback_result=await execute_tool_with_recovery_result(
+                fallback_tool,
+                args,
+                config,
+                semaphore
+            )
+            
+            if fallback_result.success:
+                return fallback_result.output
+            
+            assert fallback_result.error is not None
+            assert fallback_result.exception is not None
+            assert fallback_result.decision is not None
+            
+            return (
+                f"Error executing fallback tool: {fallback_result.exception} "
+                f"(category={fallback_result.error.category.value}, "
+                f"reason={fallback_result.decision.reason})"
+            )
+
+    return (
+        f"Error executing tool: {result.exception} "
+        f"(category={result.error.category.value}, "
+        f"reason={result.decision.reason})"
+    )
 
 async def researcher_tools(
     state: ResearcherState, config: RunnableConfig
@@ -667,13 +802,31 @@ async def researcher_tools(
 
     # 创建并发信号量,限制并发数
     tool_semaphore = asyncio.Semaphore(configurable.max_concurrent_tool_calls)
-
-    tool_execution_tasks = [
-        execute_tool_safely(
-            tools_by_name[tool_call["name"]], tool_call["args"], config, tool_semaphore
+    
+    tool_execution_tasks=[]
+    
+    for tool_call in allowed_tool_calls:
+        tool=tools_by_name[tool_call["name"]]
+        
+        fallback_tool=None
+        
+        if configurable.search_fallback_enabled:
+            fallback_tool=resolve_search_fallback_tool(
+                primary_tool=tool,
+                available_tools=list(tools_by_name.values()),
+                preferred_fallback_tool_name=configurable.search_fallback_tool_name
+            )
+        
+        tool_execution_tasks.append(
+            execute_tool_safely(
+                tool,
+                tool_call["name"],
+                config,
+                semaphore=tool_semaphore,
+                fallback_tool=fallback_tool
+            )
         )
-        for tool_call in allowed_tool_calls
-    ]
+    
     observations = await asyncio.gather(*tool_execution_tasks)
 
     # Create tool messages from execution results
@@ -1446,3 +1599,4 @@ deep_researcher_builder.add_edge("final_report_generation", END)  # Final exit p
 
 # Compile the complete deep researcher workflow
 deep_researcher = deep_researcher_builder.compile()
+

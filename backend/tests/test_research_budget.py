@@ -5,7 +5,6 @@ from langgraph.graph import START, END, StateGraph
 from langgraph.types import Command
 import open_deep_research.deep_researcher as dr
 
-
 # ============================================================
 # Test Helpers
 # ============================================================
@@ -259,10 +258,7 @@ def test_total_tool_budget_exhaustion_routes_to_compression(monkeypatch):
 
     tool_outputs = command.update["researcher_messages"]
 
-    assert [
-        msg.tool_call_id
-        for msg in tool_outputs
-    ] == [
+    assert [msg.tool_call_id for msg in tool_outputs] == [
         "call_a",
         "call_b",
     ]
@@ -358,10 +354,7 @@ def test_max_concurrent_tool_calls(monkeypatch):
             finally:
                 tracker["active"] -= 1
 
-    tools = [
-        SlowTool(f"search_{i}")
-        for i in range(6)
-    ]
+    tools = [SlowTool(f"search_{i}") for i in range(6)]
 
     patch_tools(monkeypatch, tools)
 
@@ -409,6 +402,9 @@ def test_retry_does_not_consume_extra_tool_budget(monkeypatch):
     class RetryOnceTool:
         def __init__(self):
             self.name = "retry_search"
+            self.metadata = {
+                "type": "search",
+            }
             self.attempts = 0
 
         async def ainvoke(self, args, config):
@@ -442,11 +438,13 @@ def test_retry_does_not_consume_extra_tool_budget(monkeypatch):
 
     # 但是逻辑 Tool Invocation 只有一次
     assert command.update["total_tool_calls"] == 1
-    
+
+
 # ============================================================
 # Test 6
 # react_iteration 和 total_tool_calls会累加
 # ============================================================
+
 
 def test_graph_total_budget_one_stops_after_first_iteration(monkeypatch):
     """
@@ -497,7 +495,6 @@ def test_graph_total_budget_one_stops_after_first_iteration(monkeypatch):
             goto="researcher_tools",
             update={
                 "researcher_messages": [response],
-
                 # 注意：
                 # reducer 会执行旧值 + 1
                 "react_iterations": 1,
@@ -569,12 +566,13 @@ def test_graph_total_budget_one_stops_after_first_iteration(monkeypatch):
 
     # 确实成功进入 compression
     assert result["compressed_research"] == "compressed"
-    
-    
+
+
 # ============================================================
 # Test 7
 # react_iteration 和 total_tool_calls 到达上限会进入压缩节点
 # ============================================================
+
 
 def test_graph_budget_accumulates_across_two_iterations(monkeypatch):
     """
@@ -692,3 +690,404 @@ def test_graph_budget_accumulates_across_two_iterations(monkeypatch):
     assert result["total_tool_calls"] == 2
 
     assert result["compressed_research"] == "compressed"
+
+class AlwaysTimeoutPrimarySearchTool:
+    def __init__(self):
+        self.name = "primary_search"
+        self.metadata = {
+            "type": "search",
+        }
+        self.call_count = 0
+
+    async def ainvoke(self, args, config):
+        self.call_count += 1
+        raise TimeoutError("primary timeout")
+
+
+class SuccessfulFallbackSearchTool:
+    def __init__(self):
+        self.name = "fallback_search"
+        self.metadata = {
+            "type": "search",
+        }
+        self.call_count = 0
+
+    async def ainvoke(self, args, config):
+        self.call_count += 1
+        return "fallback result"
+    
+def test_researcher_tools_uses_search_fallback_after_retry_exhausted(monkeypatch):
+    patch_config(
+        monkeypatch,
+        max_react_iterations=10,
+        max_tool_calls_per_iteration=5,
+        max_total_tool_calls=20,
+        max_concurrent_tool_calls=1,
+        max_tool_retries=1,
+    )
+
+    primary_tool = AlwaysTimeoutPrimarySearchTool()
+    fallback_tool = SuccessfulFallbackSearchTool()
+
+    patch_tools(
+        monkeypatch,
+        [
+            primary_tool,
+            fallback_tool,
+        ],
+    )
+
+    tool_calls = [
+        make_tool_call(
+            "primary_search",
+            "call_primary",
+        )
+    ]
+
+    state = make_state(tool_calls)
+
+    command = run_researcher_tools(state)
+
+    assert primary_tool.call_count == 2
+    assert fallback_tool.call_count == 1
+    assert command.update["total_tool_calls"] == 1
+    
+def test_researcher_tools_does_not_use_search_fallback_for_non_transient_error(monkeypatch):
+    patch_config(
+        monkeypatch,
+        max_react_iterations=10,
+        max_tool_calls_per_iteration=5,
+        max_total_tool_calls=20,
+        max_concurrent_tool_calls=1,
+        max_tool_retries=1,
+    )
+
+    primary_tool = AuthFailurePrimarySearchTool()
+    fallback_tool = SuccessfulFallbackSearchTool()
+
+    patch_tools(
+        monkeypatch,
+        [
+            primary_tool,
+            fallback_tool,
+        ],
+    )
+
+    tool_calls = [
+        make_tool_call(
+            "auth_failure_search",
+            "call_auth_failure",
+        )
+    ]
+
+    state = make_state(tool_calls)
+
+    command = run_researcher_tools(state)
+
+    assert primary_tool.call_count == 1
+    assert fallback_tool.call_count == 0
+    assert command.update["total_tool_calls"] == 1
+    
+class FakeResponse:
+    def __init__(self, status_code):
+        self.status_code = status_code
+
+
+class FakeHTTPError(Exception):
+    def __init__(self, status_code):
+        super().__init__(f"HTTP {status_code}")
+        self.response = FakeResponse(status_code)
+
+
+class AuthFailurePrimarySearchTool:
+    def __init__(self):
+        self.name = "auth_failure_search"
+        self.metadata = {
+            "type": "search",
+        }
+        self.call_count = 0
+
+    async def ainvoke(self, args, config):
+        self.call_count += 1
+        raise FakeHTTPError(401)
+    
+def test_researcher_tools_respects_search_fallback_disabled(monkeypatch):
+    patch_config(
+        monkeypatch,
+        max_react_iterations=10,
+        max_tool_calls_per_iteration=5,
+        max_total_tool_calls=20,
+        max_concurrent_tool_calls=1,
+        max_tool_retries=1,
+        search_fallback_enabled=False,
+    )
+
+    primary_tool = AlwaysTimeoutPrimarySearchTool()
+    fallback_tool = SuccessfulFallbackSearchTool()
+
+    patch_tools(
+        monkeypatch,
+        [
+            primary_tool,
+            fallback_tool,
+        ],
+    )
+
+    tool_calls = [
+        make_tool_call(
+            "primary_search",
+            "call_primary",
+        )
+    ]
+
+    state = make_state(tool_calls)
+
+    command = run_researcher_tools(state)
+
+    assert primary_tool.call_count == 2
+    assert fallback_tool.call_count == 0
+    assert command.update["total_tool_calls"] == 1
+
+    tool_outputs = command.update["researcher_messages"]
+
+    assert len(tool_outputs) == 1
+    assert tool_outputs[0].tool_call_id == "call_primary"
+    assert "retry_budget_exhausted" in str(tool_outputs[0].content)
+    
+import pytest
+
+from open_deep_research.search_fallback import SearchFallbackPolicy
+from open_deep_research.tool_recovery import (
+    ToolErrorCategory,
+    ToolErrorInfo,
+    ToolKind,
+    ToolPolicy,
+)
+
+
+def make_error(transient=True):
+    return ToolErrorInfo(
+        category=(
+            ToolErrorCategory.TIMEOUT
+            if transient
+            else ToolErrorCategory.BAD_REQUEST
+        ),
+        transient=transient,
+        status_code=None,
+        status_source=None,
+        exception_type="FakeError",
+        exception_module="tests",
+        message="fake error",
+    )
+
+
+def make_tool(kind=ToolKind.SEARCH):
+    return ToolPolicy(
+        name="fake_tool",
+        kind=kind,
+        idempotent=(kind == ToolKind.SEARCH),
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides, expected, reason",
+    [
+        (
+            {},
+            True,
+            "transient_failure_after_retries",
+        ),
+        (
+            {"error": make_error(transient=False)},
+            False,
+            "non_transient_error",
+        ),
+        (
+            {"tool": make_tool(ToolKind.MCP)},
+            False,
+            "not_search_tool",
+        ),
+        (
+            {"tool": make_tool(ToolKind.UNKNOWN)},
+            False,
+            "not_search_tool",
+        ),
+        (
+            {"fallback_provider": None},
+            False,
+            "fallback_not_configured",
+        ),
+        (
+            {"fallback_provider": "tavily"},
+            False,
+            "same_provider",
+        ),
+        (
+            {"fallback_used": True},
+            False,
+            "fallback_already_used",
+        ),
+        (
+            {"retries_exhausted": False},
+            False,
+            "primary_retries_remaining",
+        ),
+    ],
+)
+def test_search_fallback_policy(overrides, expected, reason):
+    inputs = {
+        "error": make_error(),
+        "tool": make_tool(),
+        "primary_provider": "tavily",
+        "fallback_provider": "backup_search",
+        "retries_exhausted": True,
+        "fallback_used": False,
+    }
+    inputs.update(overrides)
+
+    decision = SearchFallbackPolicy().decide(**inputs)
+
+    assert decision.should_fallback is expected
+    assert decision.reason == reason
+    
+from open_deep_research.search_fallback import resolve_search_fallback_tool
+
+
+class FakeTool:
+    def __init__(self, name, tool_type):
+        self.name = name
+        self.metadata = {
+            "type": tool_type,
+        }
+
+
+def test_resolves_another_search_tool_as_fallback():
+    primary = FakeTool("tavily_search", "search")
+    fallback = FakeTool("openai_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, fallback],
+    )
+
+    assert result is fallback
+
+
+def test_does_not_resolve_fallback_for_non_search_primary():
+    primary = FakeTool("create_order", "mcp")
+    fallback = FakeTool("openai_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, fallback],
+    )
+
+    assert result is None
+
+
+def test_ignores_non_search_candidates():
+    primary = FakeTool("tavily_search", "search")
+    mcp_tool = FakeTool("create_order", "mcp")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, mcp_tool],
+    )
+
+    assert result is None
+
+
+def test_does_not_use_same_tool_as_fallback():
+    primary = FakeTool("tavily_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary],
+    )
+
+    assert result is None
+    
+def test_resolves_preferred_search_fallback_tool():
+    primary = FakeTool("tavily_search", "search")
+    fallback_a = FakeTool("openai_search", "search")
+    fallback_b = FakeTool("anthropic_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, fallback_a, fallback_b],
+        preferred_fallback_tool_name="anthropic_search",
+    )
+
+    assert result is fallback_b
+
+
+def test_returns_none_when_preferred_search_fallback_is_missing():
+    primary = FakeTool("tavily_search", "search")
+    fallback = FakeTool("openai_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, fallback],
+        preferred_fallback_tool_name="missing_search",
+    )
+
+    assert result is None
+
+
+def test_does_not_use_primary_as_preferred_fallback():
+    primary = FakeTool("tavily_search", "search")
+    fallback = FakeTool("openai_search", "search")
+
+    result = resolve_search_fallback_tool(
+        primary_tool=primary,
+        available_tools=[primary, fallback],
+        preferred_fallback_tool_name="tavily_search",
+    )
+
+    assert result is None
+    
+def test_researcher_tools_uses_configured_search_fallback_tool(monkeypatch):
+    patch_config(
+        monkeypatch,
+        max_react_iterations=10,
+        max_tool_calls_per_iteration=5,
+        max_total_tool_calls=20,
+        max_concurrent_tool_calls=1,
+        max_tool_retries=1,
+        search_fallback_enabled=True,
+        search_fallback_tool_name="fallback_search",
+    )
+
+    primary_tool = AlwaysTimeoutPrimarySearchTool()
+    fallback_tool = SuccessfulFallbackSearchTool()
+    other_fallback_tool = SuccessfulFallbackSearchTool()
+    other_fallback_tool.name = "other_fallback_search"
+
+    patch_tools(
+        monkeypatch,
+        [
+            primary_tool,
+            other_fallback_tool,
+            fallback_tool,
+        ],
+    )
+
+    tool_calls = [
+        make_tool_call(
+            "primary_search",
+            "call_primary",
+        )
+    ]
+
+    state = make_state(tool_calls)
+
+    command = run_researcher_tools(state)
+
+    assert primary_tool.call_count == 2
+    assert other_fallback_tool.call_count == 0
+    assert fallback_tool.call_count == 1
+    assert command.update["total_tool_calls"] == 1
+
+    tool_outputs = command.update["researcher_messages"]
+
+    assert "fallback result" in str(tool_outputs[0].content)

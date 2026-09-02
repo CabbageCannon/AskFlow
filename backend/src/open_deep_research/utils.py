@@ -542,6 +542,12 @@ async def load_mcp_tools(
 
         # Wrap tool with authentication handling and add to list
         enhanced_tool = wrap_mcp_authenticate_tool(mcp_tool)
+        
+        enhanced_tool.metadata={
+            **(enhanced_tool.metadata or {}),
+            "type":"mcp"
+        }
+        
         configured_tools.append(enhanced_tool)
 
     return configured_tools

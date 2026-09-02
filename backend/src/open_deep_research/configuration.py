@@ -115,22 +115,22 @@ class Configuration(BaseModel):
     )
     # 单次targeted_research允许分配的最大任务数(也就是可以分配的最大researcher数)
     max_targeted_research_tasks_per_round: int = Field(
-    default=3,
-    ge=1,
-    metadata={
-        "x_oap_ui_config": {
-            "type": "slider",
-            "default": 3,
-            "min": 1,
-            "max": 10,
-            "step": 1,
-            "description": (
-                "Maximum number of targeted follow-up research tasks "
-                "allowed in a single adaptive research round."
-            ),
-        }
-    },
-)
+        default=3,
+        ge=1,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "slider",
+                "default": 3,
+                "min": 1,
+                "max": 10,
+                "step": 1,
+                "description": (
+                    "Maximum number of targeted follow-up research tasks "
+                    "allowed in a single adaptive research round."
+                ),
+            }
+        },
+    )
     # 一个researcher最多迭代的次数
     max_react_iterations: int = Field(
         default=10,
@@ -171,9 +171,9 @@ class Configuration(BaseModel):
             "x_oap_ui_config": {
                 "type": "slider",
                 "default": 20,
-                "min": 1, # 这只是UI信息，实际上不会校验
+                "min": 1,  # 这只是UI信息，实际上不会校验
                 "max": 100,
-                "ge":1, #大于等于1
+                "ge": 1,  # 大于等于1
                 "step": 1,
                 "description": (
                     "Maximum total number of budgeted tool calls "
@@ -216,7 +216,7 @@ class Configuration(BaseModel):
     max_tool_retries: int = Field(default=3)
     # Verification
     # 最大审查次数
-    max_verification_iterations:int = Field(
+    max_verification_iterations: int = Field(
         default=3,
         ge=1,
         metadata={
@@ -231,23 +231,37 @@ class Configuration(BaseModel):
         },
     )
     # 最低预期信息收益
-    min_expected_information_gain:float=Field(
+    min_expected_information_gain: float = Field(
         default=0.30,
         ge=0.0,
         le=1.0,
         metadata={
             "x_oap_ui_config": {
-            "type": "number",
-            "default": 0.30,
-            "min": 0.0,
-            "max": 1.0,
-            "step": 0.05,
-            "description": (
-                "Minimum expected information gain required for an "
-                "evidence gap to justify targeted follow-up research."
-            ),
-        }
-        }
+                "type": "number",
+                "default": 0.30,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.05,
+                "description": (
+                    "Minimum expected information gain required for an "
+                    "evidence gap to justify targeted follow-up research."
+                ),
+            }
+        },
+    )
+    # 是否允许搜索工具fallback
+    search_fallback_enabled: bool = Field(
+        default=True,
+        metadata={
+            "description": "Whether to fallback to another search provider when the primary search tool fails after retries."
+        },
+    )
+    # 指定fallback_tool
+    search_fallback_tool_name: str | None = Field(
+        default=None,
+        metadata={
+            "description": "Name of the search tool to use as fallback. If unset, the first available alternative search tool is used."
+        },
     )
     # Model Configuration
     summarization_model: str = Field(
