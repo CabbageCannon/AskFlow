@@ -289,11 +289,6 @@ class ToolPolicy:
 
     # 是否允许 infrastructure-level retry(本身是否是值得重试的)
     retry_enabled: bool = True
-    
-CONTROL_TOOL_NAMES = {
-    "think_tool",
-    "ResearchComplete",
-}
 
 CONTROL_TOOL_NAMES = {
     "think_tool",

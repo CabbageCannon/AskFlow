@@ -237,12 +237,9 @@ class SupervisorState(TypedDict):
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""
 
-    # 当前researcher迭代的次数.researcher调用LLM生成一组工具调用list就算做一次iteration
-    react_iterations: Annotated[int, operator.add] = 0
     # 预算型tool执行了的次数，即便执行失败了也算，并且这里如果execute_tool_safely中执行失败了重试，也不会额外增加，后续这里应该优化
     total_tool_calls: Annotated[int, operator.add] = 0
     researcher_messages: Annotated[list[MessageLikeRepresentation], operator.add]
-    tool_call_iterations: int = 0  # 后续删除当前字段
     # 当前research负责研究的具体主题
     research_topic: str
     # 压缩后的原始材料（这部分会交给supervisor）

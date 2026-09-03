@@ -131,22 +131,6 @@ class Configuration(BaseModel):
             }
         },
     )
-    # 一个researcher最多迭代的次数
-    max_react_iterations: int = Field(
-        default=10,
-        metadata={
-            "x_oap_ui_config": {
-                "type": "slider",
-                "default": 10,
-                "min": 1,
-                "max": 30,
-                "step": 1,
-                "description": (
-                    "Maximum number of ReAct iterations for a single researcher."
-                ),
-            }
-        },
-    )
     # 在一个researcher一次迭代中允许调用预算型工具的数目
     max_tool_calls_per_iteration: int = Field(
         default=5,
@@ -196,19 +180,6 @@ class Configuration(BaseModel):
                     "Maximum number of tool calls that may execute "
                     "concurrently within a single researcher."
                 ),
-            }
-        },
-    )
-    max_react_tool_calls: int = Field(
-        default=10,
-        metadata={
-            "x_oap_ui_config": {
-                "type": "slider",
-                "default": 10,
-                "min": 1,
-                "max": 30,
-                "step": 1,
-                "description": "Maximum number of tool calling iterations to make in a single researcher step.",
             }
         },
     )

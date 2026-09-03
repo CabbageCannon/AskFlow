@@ -458,19 +458,6 @@ supervisor_builder.add_edge(START, "supervisor")  # Entry point to supervisor
 # Compile supervisor subgraph for use in main workflow
 supervisor_subgraph = supervisor_builder.compile()
 
-
-# 返回当前全局剩余可以调用预算型工具的次数
-def get_remaining_global_research_budget(
-    state,
-    config: RunnableConfig,
-) -> int:
-    configurable = Configuration.from_runnable_config(config)
-
-    used = state.get("total_research_tool_calls", 0)
-
-    return max(configurable.max_global_research_tool_calls - used, 0)  # 不希望返回负数
-
-
 async def researcher(
     state: ResearcherState, config: RunnableConfig
 ) -> Command[Literal["researcher_tools"]]:
