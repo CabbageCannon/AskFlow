@@ -60,7 +60,7 @@ const MessageList = ({ isGenerating, onRegenerate }: MessageListProps) => {
 
   // 监听aiMessage内容是否增多
   useEffect(() => {
-    if (!isGenerating || !isAtBottom) return
+    if (!isGenerating || !shouldFollowRef.current) return
 
     // 如果正在生成内容并且当前状态正在底部，则随着item高度增加自动滚动到底部
     const frameId = requestAnimationFrame(() => {
@@ -87,7 +87,7 @@ const MessageList = ({ isGenerating, onRegenerate }: MessageListProps) => {
     })
 
     return () => cancelAnimationFrame(frameId)
-  })
+  },[isGenerating])
 
   // 切换会话时也自动回到底部
   useEffect(() => {
