@@ -237,6 +237,8 @@ class SupervisorState(TypedDict):
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""
 
+    # ResearcherState
+    react_iterations: Annotated[int, operator.add] = 0  
     # 预算型tool执行了的次数，即便执行失败了也算，并且这里如果execute_tool_safely中执行失败了重试，也不会额外增加，后续这里应该优化
     total_tool_calls: Annotated[int, operator.add] = 0
     researcher_messages: Annotated[list[MessageLikeRepresentation], operator.add]
