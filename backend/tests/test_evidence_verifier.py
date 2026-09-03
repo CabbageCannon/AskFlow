@@ -25,7 +25,11 @@ class FakeVerificationModel:
         self.structured_schema = None
         self.received_messages = None
 
-    def with_structured_output(self, schema):
+    def with_structured_output(
+        self,
+        schema,
+        **kwargs,
+    ):
         self.structured_schema = schema
         return self
 
@@ -60,18 +64,18 @@ def patch_config(monkeypatch):
         research_model="fake:model",
         research_model_max_tokens=1000,
         max_structured_output_retries=1,
+
+        # Dynamic Model Router gateway config
+        bailian_api_key="fake-bailian-api-key",
+        bailian_base_url="https://example.com/v1",
     )
 
     monkeypatch.setattr(
         dr.Configuration,
         "from_runnable_config",
-        classmethod(lambda cls, runnable_config=None: config),
-    )
-
-    monkeypatch.setattr(
-        dr,
-        "get_api_key_for_model",
-        lambda model, config: "fake-api-key",
+        classmethod(
+            lambda cls, runnable_config=None: config
+        ),
     )
 
     return config

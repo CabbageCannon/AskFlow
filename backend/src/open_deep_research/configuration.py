@@ -379,6 +379,31 @@ class Configuration(BaseModel):
     )
 
     # LLM运行相关配置
+    bailian_api_key: str | None = Field(
+        default=None,
+        metadata={
+            "description": ("Alibaba Cloud Model Studio API key used by routed models.")
+        },
+    )
+    bailian_base_url: str | None = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        metadata={
+            "description": (
+                "OpenAI-compatible base URL for Alibaba Cloud Model Studio."
+            )
+        },
+    )
+    # 是否开启模型多态路由
+    model_router_dynamic_enabled: bool = Field(
+        default=True,
+        metadata={"description": "Enable dynamic model selection."},
+    )
+    # 是否开启简单任务选用低成本model
+    model_router_prefer_low_cost: bool = Field(
+        default=True,
+        metadata={"description": "Prefer lower-cost models for simple tasks."},
+    )
+
     @classmethod
     def from_runnable_config(
         cls, config: Optional[RunnableConfig] = None

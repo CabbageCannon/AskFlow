@@ -115,10 +115,10 @@ def test_tool_calls_per_iteration_limit(monkeypatch):
     )
 
     tools = [
-        FakeTool("search_a"),
-        FakeTool("think_tool"),
-        FakeTool("search_b"),
-        FakeTool("search_c"),
+        FakeTool("search_a", "search"),
+        FakeTool("think_tool", "control"),
+        FakeTool("search_b", "search"),
+        FakeTool("search_c", "search"),
     ]
 
     patch_tools(monkeypatch, tools)
@@ -204,8 +204,8 @@ def test_total_tool_budget_exhaustion_routes_to_compression(monkeypatch):
     )
 
     tools = [
-        FakeTool("search_a"),
-        FakeTool("search_b"),
+        FakeTool("search_a", "search"),
+        FakeTool("search_b", "search"),
     ]
 
     patch_tools(monkeypatch, tools)
@@ -283,7 +283,7 @@ def test_react_iteration_limit_routes_to_compression(monkeypatch):
     )
 
     tools = [
-        FakeTool("search_a"),
+        FakeTool("search_a", "search"),
     ]
 
     patch_tools(monkeypatch, tools)
@@ -468,7 +468,10 @@ def test_graph_total_budget_one_stops_after_first_iteration(monkeypatch):
         max_tool_retries=0,
     )
 
-    fake_tool = FakeTool("search")
+    fake_tool = FakeTool(
+        "search",
+        "search",
+    )
 
     patch_tools(
         monkeypatch,
@@ -600,7 +603,7 @@ def test_graph_budget_accumulates_across_two_iterations(monkeypatch):
         max_tool_retries=0,
     )
 
-    fake_tool = FakeTool("search")
+    fake_tool = FakeTool("search", "search")
 
     patch_tools(
         monkeypatch,
@@ -691,6 +694,7 @@ def test_graph_budget_accumulates_across_two_iterations(monkeypatch):
 
     assert result["compressed_research"] == "compressed"
 
+
 class AlwaysTimeoutPrimarySearchTool:
     def __init__(self):
         self.name = "primary_search"
@@ -715,7 +719,8 @@ class SuccessfulFallbackSearchTool:
     async def ainvoke(self, args, config):
         self.call_count += 1
         return "fallback result"
-    
+
+
 def test_researcher_tools_uses_search_fallback_after_retry_exhausted(monkeypatch):
     patch_config(
         monkeypatch,
@@ -751,8 +756,11 @@ def test_researcher_tools_uses_search_fallback_after_retry_exhausted(monkeypatch
     assert primary_tool.call_count == 2
     assert fallback_tool.call_count == 1
     assert command.update["total_tool_calls"] == 1
-    
-def test_researcher_tools_does_not_use_search_fallback_for_non_transient_error(monkeypatch):
+
+
+def test_researcher_tools_does_not_use_search_fallback_for_non_transient_error(
+    monkeypatch,
+):
     patch_config(
         monkeypatch,
         max_react_iterations=10,
@@ -787,7 +795,8 @@ def test_researcher_tools_does_not_use_search_fallback_for_non_transient_error(m
     assert primary_tool.call_count == 1
     assert fallback_tool.call_count == 0
     assert command.update["total_tool_calls"] == 1
-    
+
+
 class FakeResponse:
     def __init__(self, status_code):
         self.status_code = status_code
@@ -810,7 +819,8 @@ class AuthFailurePrimarySearchTool:
     async def ainvoke(self, args, config):
         self.call_count += 1
         raise FakeHTTPError(401)
-    
+
+
 def test_researcher_tools_respects_search_fallback_disabled(monkeypatch):
     patch_config(
         monkeypatch,
@@ -853,7 +863,8 @@ def test_researcher_tools_respects_search_fallback_disabled(monkeypatch):
     assert len(tool_outputs) == 1
     assert tool_outputs[0].tool_call_id == "call_primary"
     assert "retry_budget_exhausted" in str(tool_outputs[0].content)
-    
+
+
 import pytest
 
 from open_deep_research.search_fallback import SearchFallbackPolicy
@@ -868,9 +879,7 @@ from open_deep_research.tool_recovery import (
 def make_error(transient=True):
     return ToolErrorInfo(
         category=(
-            ToolErrorCategory.TIMEOUT
-            if transient
-            else ToolErrorCategory.BAD_REQUEST
+            ToolErrorCategory.TIMEOUT if transient else ToolErrorCategory.BAD_REQUEST
         ),
         transient=transient,
         status_code=None,
@@ -949,7 +958,8 @@ def test_search_fallback_policy(overrides, expected, reason):
 
     assert decision.should_fallback is expected
     assert decision.reason == reason
-    
+
+
 from open_deep_research.search_fallback import resolve_search_fallback_tool
 
 
@@ -1006,7 +1016,8 @@ def test_does_not_use_same_tool_as_fallback():
     )
 
     assert result is None
-    
+
+
 def test_resolves_preferred_search_fallback_tool():
     primary = FakeTool("tavily_search", "search")
     fallback_a = FakeTool("openai_search", "search")
@@ -1045,7 +1056,8 @@ def test_does_not_use_primary_as_preferred_fallback():
     )
 
     assert result is None
-    
+
+
 def test_researcher_tools_uses_configured_search_fallback_tool(monkeypatch):
     patch_config(
         monkeypatch,

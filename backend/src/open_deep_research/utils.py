@@ -32,6 +32,16 @@ from tavily import AsyncTavilyClient
 from open_deep_research.configuration import Configuration, SearchAPI
 from open_deep_research.prompts import summarize_webpage_prompt
 from open_deep_research.state import ResearchComplete, Summary
+from open_deep_research.model_router import (
+    TaskType,
+    log_model_decision,
+    route_model,
+)
+
+from open_deep_research.model_utils import (
+    build_routed_model_runtime_config,
+)
+from open_deep_research.model_router import TaskType, route_model_for_text
 
 ##########################
 # Tavily Search Tool Utils
@@ -86,18 +96,7 @@ async def tavily_search(
     max_char_to_include = configurable.max_content_length
 
     # Initialize summarization model with retry logic
-    model_api_key = get_api_key_for_model(configurable.summarization_model, config)
-    summarization_model = (
-        init_chat_model(
-            model=configurable.summarization_model,
-            max_tokens=configurable.summarization_model_max_tokens,
-            api_key=model_api_key,
-            tags=["langsmith:nostream"],
-            extra_body={"thinking": {"type": "disabled"}},
-        )
-        .with_structured_output(Summary)
-        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
-    )
+    routing_text = result["raw_content"][:max_char_to_include]
 
     # Step 4: Create summarization tasks (skip empty content)
     async def noop():
@@ -108,9 +107,7 @@ async def tavily_search(
         (
             noop()
             if not result.get("raw_content")
-            else summarize_webpage(
-                summarization_model, result["raw_content"][:max_char_to_include]
-            )
+            else summarize_webpage(result["raw_content"][:max_char_to_include], config)
         )
         for result in unique_results.values()
     ]
@@ -181,7 +178,7 @@ async def tavily_search_async(
     return search_results
 
 
-async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
+async def summarize_webpage(webpage_content: str, config: RunnableConfig) -> str:
     """Summarize webpage content using AI model with timeout protection.
 
     Args:
@@ -192,6 +189,39 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
         Formatted summary with key excerpts, or original content if summarization fails
     """
     try:
+        configurable = Configuration.from_runnable_config(config)
+        model_decision = route_model_for_text(
+            task_type=(TaskType.WEBPAGE_SUMMARIZATION),
+            text=webpage_content,
+            dynamic_enabled=(configurable.model_router_dynamic_enabled),
+            prefer_low_cost=(configurable.model_router_prefer_low_cost),
+        )
+        model_config = (
+            build_routed_model_runtime_config(
+                model_decision,
+                api_key=(
+                    configurable.bailian_api_key
+                ),
+                base_url=(
+                    configurable.bailian_base_url
+                ),
+            )
+        )
+        summarization_model = (
+            init_chat_model(
+                **model_config
+            )
+            .with_structured_output(
+                Summary,
+                method="function_calling",
+            )
+            .with_retry(
+                stop_after_attempt=(
+                    configurable
+                    .max_structured_output_retries
+                )
+            )
+        )
         # Create prompt with current date context
         prompt_content = summarize_webpage_prompt.format(
             webpage_content=webpage_content, date=get_today_str()
@@ -199,14 +229,18 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
 
         # Execute summarization with timeout to prevent hanging
         summary = await asyncio.wait_for(
-            model.ainvoke([HumanMessage(content=prompt_content)]),
+            summarization_model.ainvoke([HumanMessage(content=prompt_content)]),
             timeout=60.0,  # 60 second timeout for summarization
         )
 
         # Format the summary with structured sections
-        formatted_summary = (
-            f"<summary>\n{summary.summary}\n</summary>\n\n"
-            f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+        formatted_summary =  (
+            f"<summary>\n"
+            f"{summary.summary}\n"
+            f"</summary>\n\n"
+            f"<key_excerpts>\n"
+            f"{summary.key_excerpts}\n"
+            f"</key_excerpts>"
         )
 
         return formatted_summary
@@ -214,13 +248,17 @@ async def summarize_webpage(model: BaseChatModel, webpage_content: str) -> str:
     except asyncio.TimeoutError:
         # Timeout during summarization - return original content
         logging.warning(
-            "Summarization timed out after 60 seconds, returning original content"
+            "Summarization timed out after "
+            "60 seconds, returning original "
+            "content"
         )
         return webpage_content
     except Exception as e:
         # Other errors during summarization - log and return original content
         logging.warning(
-            f"Summarization failed with error: {str(e)}, returning original content"
+            "Summarization failed with error: "
+            f"{str(e)}, returning original "
+            "content"
         )
         return webpage_content
 
@@ -542,12 +580,9 @@ async def load_mcp_tools(
 
         # Wrap tool with authentication handling and add to list
         enhanced_tool = wrap_mcp_authenticate_tool(mcp_tool)
-        
-        enhanced_tool.metadata={
-            **(enhanced_tool.metadata or {}),
-            "type":"mcp"
-        }
-        
+
+        enhanced_tool.metadata = {**(enhanced_tool.metadata or {}), "type": "mcp"}
+
         configured_tools.append(enhanced_tool)
 
     return configured_tools
@@ -736,37 +771,54 @@ def is_token_limit_exceeded(exception: Exception, model_name: str = None) -> boo
     )
 
 
-def _check_openai_token_limit(exception: Exception, error_str: str) -> bool:
-    """Check if exception indicates OpenAI token limit exceeded."""
-    # Analyze exception metadata
+def _check_openai_token_limit(
+    exception: Exception,
+    error_str: str,
+) -> bool:
+    """Check whether an OpenAI-compatible error is really a context limit error."""
+
     exception_type = str(type(exception))
     class_name = exception.__class__.__name__
-    module_name = getattr(exception.__class__, "__module__", "")
+    module_name = getattr(
+        exception.__class__,
+        "__module__",
+        "",
+    )
 
-    # Check if this is an OpenAI exception
     is_openai_exception = (
         "openai" in exception_type.lower() or "openai" in module_name.lower()
     )
 
-    # Check for typical OpenAI token limit error types
-    is_request_error = class_name in ["BadRequestError", "InvalidRequestError"]
+    is_request_error = class_name in {
+        "BadRequestError",
+        "InvalidRequestError",
+    }
 
-    if is_openai_exception and is_request_error:
-        # Look for token-related keywords in error message
-        token_keywords = ["token", "context", "length", "maximum context", "reduce"]
-        if any(keyword in error_str for keyword in token_keywords):
-            return True
+    # Strong context-limit signals only.
+    token_limit_patterns = (
+        "context_length_exceeded",
+        "maximum context length",
+        "maximum context window",
+        "context window exceeded",
+        "exceeds the context window",
+        "exceeds the model's context",
+        "prompt is too long",
+        "too many tokens",
+        "input tokens exceed",
+        "input length exceeds",
+    )
 
-    # Check for specific OpenAI error codes
-    if hasattr(exception, "code") and hasattr(exception, "type"):
-        error_code = getattr(exception, "code", "")
-        error_type = getattr(exception, "type", "")
+    error_code = str(getattr(exception, "code", "") or "").lower()
 
-        if (
-            error_code == "context_length_exceeded"
-            or error_type == "invalid_request_error"
-        ):
-            return True
+    if error_code == "context_length_exceeded":
+        return True
+
+    if (
+        is_openai_exception
+        and is_request_error
+        and any(pattern in error_str for pattern in token_limit_patterns)
+    ):
+        return True
 
     return False
 

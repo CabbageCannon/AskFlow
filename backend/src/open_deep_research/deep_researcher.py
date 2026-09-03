@@ -1,7 +1,7 @@
 """Main LangGraph implementation for the Deep Research agent."""
 
 import asyncio
-from typing import Literal,Any
+from typing import Literal, Any
 import random
 
 from langchain.chat_models import init_chat_model
@@ -48,8 +48,6 @@ from open_deep_research.state import (
 from open_deep_research.utils import (
     anthropic_websearch_called,
     get_all_tools,
-    get_api_key_for_model,
-    get_model_token_limit,
     get_notes_from_tool_calls,
     get_today_str,
     is_token_limit_exceeded,
@@ -57,22 +55,30 @@ from open_deep_research.utils import (
     remove_up_to_last_ai_message,
     think_tool,
 )
-from open_deep_research.tool_recovery import(
+from open_deep_research.tool_recovery import (
     RetryPolicy,
     classify_tool_error,
     infer_tool_policy,
-    ToolExecutionResult
+    ToolExecutionResult,
 )
 from open_deep_research.search_fallback import (
     SearchFallbackPolicy,
-    resolve_search_fallback_tool
+    resolve_search_fallback_tool,
+)
+
+from open_deep_research.model_utils import (
+    build_routed_model_runtime_config,
+)
+
+from open_deep_research.model_router import (
+    TaskType,
+    route_model_for_text,
 )
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
     model="deepseek:deepseek-v4-flash",
-    configurable_fields=("model", "max_tokens", "api_key"),
-    extra_body={"thinking": {"type": "disabled"}},
+    configurable_fields=("model", "max_tokens", "api_key", "base_url", "extra_body"),
 )
 
 
@@ -98,17 +104,29 @@ async def clarify_with_user(
         return Command(goto="write_research_brief")
 
     # Step 2: Prepare the model for structured clarification analysis
-    messages = state["messages"]
-    model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"],
-    }
+    messages = state.get("messages",[])
+
+    routing_text = get_buffer_string(messages)
+
+    model_decision = route_model_for_text(
+        task_type=TaskType.CLARIFICATION,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+
+    model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
+
 
     # Configure model with structured output and retry logic
     clarification_model = (
-        configurable_model.with_structured_output(ClarifyWithUser)  # 强制LLM输出结构
+        configurable_model.with_structured_output(
+            ClarifyWithUser, method="function_calling"
+        )  # 强制LLM输出结构
         .with_retry(
             stop_after_attempt=configurable.max_structured_output_retries
         )  # 允许LLM重试输出
@@ -155,16 +173,30 @@ async def write_research_brief(
     """
     # Step 1: Set up the research model for structured output
     configurable = Configuration.from_runnable_config(config)
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"],
-    }
+
+    messages=state.get("messages", [])
+    
+    routing_text = get_buffer_string(messages)
+    
+    model_decision = route_model_for_text(
+        task_type=TaskType.RESEARCH_BRIEF,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+
+    research_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
 
     # Configure model for structured research question generation
     research_model = (
-        configurable_model.with_structured_output(ResearchQuestion)
+        configurable_model.with_structured_output(
+            ResearchQuestion,
+            method="function_calling",
+        )
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(research_model_config)
     )
@@ -215,12 +247,21 @@ async def supervisor(
     """
     # Step 1: Configure the supervisor model with available tools
     configurable = Configuration.from_runnable_config(config)
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"],
-    }
+    routing_text = state.get(
+        "research_brief",
+        "",
+    )
+    model_decision = route_model_for_text(
+        task_type=TaskType.SUPERVISOR,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+    research_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
 
     # Available tools: research delegation, completion signaling, and strategic thinking
     lead_researcher_tools = [ConductResearch, ResearchComplete, think_tool]
@@ -386,7 +427,7 @@ async def supervisor_tools(
 
         except Exception as e:
             # Handle research execution errors
-            if is_token_limit_exceeded(e, configurable.research_model) or True:
+            if is_token_limit_exceeded(e, configurable.research_model):
                 # Token limit exceeded or other error - end research phase
                 return Command(
                     goto=END,
@@ -459,12 +500,23 @@ async def researcher(
         )
 
     # Step 2: Configure the researcher model with tools
-    research_model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"],
-    }
+    routing_text = state.get(
+        "research_topic",
+        "",
+    )
+    model_decision = route_model_for_text(
+        task_type=TaskType.RESEARCHER,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+
+    research_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
+
 
     # Prepare system prompt with MCP context if available
     researcher_prompt = research_system_prompt.format(
@@ -538,26 +590,27 @@ def is_budgeted_tool_call(tool_call) -> bool:
         return False
     return True
 
+
 async def execute_tool_with_recovery_result(
-    tool,args,config,semaphore:asyncio.Semaphore
-)->ToolExecutionResult:
+    tool, args, config, semaphore: asyncio.Semaphore
+) -> ToolExecutionResult:
     """Execute a tool and return structured recovery state."""
     configurable = Configuration.from_runnable_config(config)
-    
+
     # 最大重试次数
-    max_retries=configurable.max_tool_retries
+    max_retries = configurable.max_tool_retries
     # 工具尝试最大次数
     max_attempts = max_retries + 1
-    
+
     # 拿到这类工具的策略
-    tool_policy=infer_tool_policy(tool)
-    retry_policy=RetryPolicy()
+    tool_policy = infer_tool_policy(tool)
+    retry_policy = RetryPolicy()
 
     for attempt in range(1, max_attempts + 1):
         try:
             async with semaphore:
-                output= await tool.ainvoke(args, config)
-                
+                output = await tool.ainvoke(args, config)
+
             # 工具运行成功
             return ToolExecutionResult(
                 output=output,
@@ -565,20 +618,20 @@ async def execute_tool_with_recovery_result(
                 exception=None,
                 attempts=attempt,
                 retry_budget_exhausted=False,
-                decision=None
+                decision=None,
             )
 
         except Exception as e:
-            error_info=classify_tool_error(e)
-            
+            error_info = classify_tool_error(e)
+
             # 拿到重试决定
-            decision=retry_policy.should_retry(
-                error=error_info,\
+            decision = retry_policy.should_retry(
+                error=error_info,
                 tool=tool_policy,
                 attempt=attempt,
-                max_retries=max_retries
+                max_retries=max_retries,
             )
-            
+
             print(
                 "[TOOL_RECOVERY] "
                 f"tool={tool_policy.name!r} | "
@@ -608,32 +661,30 @@ async def execute_tool_with_recovery_result(
             base_delay = min(2 ** (attempt - 1), 8)
 
             # 增加一个随机的摆动，避免大量工具同时失败，同时重试
-            jitter=random.uniform(0,1)
-            
-            delay=base_delay+jitter
-            
+            jitter = random.uniform(0, 1)
+
+            delay = base_delay + jitter
+
             print(
                 "[TOOL_RECOVERY] "
                 f"tool={tool_policy.name!r} | "
                 f"retry_in={delay:.2f}s"
             )
-            
+
             await asyncio.sleep(delay)
-            
+
     # 最终无论什么情况都会成功返回ToolExecuteResult,不会走到这里
     raise RuntimeError("unreachable tool recovery state")
-    
+
+
 # Tool Execution Helper Function
 # fallback_tool为备选搜索源
-async def execute_tool_safely(tool, args, config, semaphore: asyncio.Semaphore,fallback_tool=None):
+async def execute_tool_safely(
+    tool, args, config, semaphore: asyncio.Semaphore, fallback_tool=None
+):
     """Execute a tool with infrastructure-level failure recovery."""
-    result=await execute_tool_with_recovery_result(
-        tool,
-        args,
-        config,
-        semaphore
-    )
-    
+    result = await execute_tool_with_recovery_result(tool, args, config, semaphore)
+
     # 运行成功直接返回
     if result.output:
         return result.output
@@ -645,18 +696,18 @@ async def execute_tool_safely(tool, args, config, semaphore: asyncio.Semaphore,f
 
     # 使用fallback_tool重试
     if fallback_tool is not None:
-        primary_policy=infer_tool_policy(tool)
-        fallback_policy=infer_tool_policy(fallback_tool)
-        
-        fallback_decision=SearchFallbackPolicy().decide(
+        primary_policy = infer_tool_policy(tool)
+        fallback_policy = infer_tool_policy(fallback_tool)
+
+        fallback_decision = SearchFallbackPolicy().decide(
             error=result.error,
             tool=primary_policy,
             primary_provider=primary_policy.name,
             fallback_provider=fallback_policy.name,
             retries_exhausted=result.retry_budget_exhausted,
-            fallback_used=False
+            fallback_used=False,
         )
-        
+
         print(
             "[SEARCH_FALLBACK] "
             f"primary={primary_policy.name!r} | "
@@ -664,22 +715,19 @@ async def execute_tool_safely(tool, args, config, semaphore: asyncio.Semaphore,f
             f"allowed={fallback_decision.should_fallback} | "
             f"reason={fallback_decision.reason}"
         )
-        
+
         if fallback_decision.should_fallback:
-            fallback_result=await execute_tool_with_recovery_result(
-                fallback_tool,
-                args,
-                config,
-                semaphore
+            fallback_result = await execute_tool_with_recovery_result(
+                fallback_tool, args, config, semaphore
             )
-            
+
             if fallback_result.success:
                 return fallback_result.output
-            
+
             assert fallback_result.error is not None
             assert fallback_result.exception is not None
             assert fallback_result.decision is not None
-            
+
             return (
                 f"Error executing fallback tool: {fallback_result.exception} "
                 f"(category={fallback_result.error.category.value}, "
@@ -691,6 +739,7 @@ async def execute_tool_safely(tool, args, config, semaphore: asyncio.Semaphore,f
         f"(category={result.error.category.value}, "
         f"reason={result.decision.reason})"
     )
+
 
 async def researcher_tools(
     state: ResearcherState, config: RunnableConfig
@@ -802,31 +851,31 @@ async def researcher_tools(
 
     # 创建并发信号量,限制并发数
     tool_semaphore = asyncio.Semaphore(configurable.max_concurrent_tool_calls)
-    
-    tool_execution_tasks=[]
-    
+
+    tool_execution_tasks = []
+
     for tool_call in allowed_tool_calls:
-        tool=tools_by_name[tool_call["name"]]
-        
-        fallback_tool=None
-        
+        tool = tools_by_name[tool_call["name"]]
+
+        fallback_tool = None
+
         if configurable.search_fallback_enabled:
-            fallback_tool=resolve_search_fallback_tool(
+            fallback_tool = resolve_search_fallback_tool(
                 primary_tool=tool,
                 available_tools=list(tools_by_name.values()),
-                preferred_fallback_tool_name=configurable.search_fallback_tool_name
+                preferred_fallback_tool_name=configurable.search_fallback_tool_name,
             )
-        
+
         tool_execution_tasks.append(
             execute_tool_safely(
                 tool,
-                tool_call["name"],
+                tool_call["args"],
                 config,
                 semaphore=tool_semaphore,
-                fallback_tool=fallback_tool
+                fallback_tool=fallback_tool,
             )
         )
-    
+
     observations = await asyncio.gather(*tool_execution_tasks)
 
     # Create tool messages from execution results
@@ -913,17 +962,27 @@ async def compress_research(state: ResearcherState, config: RunnableConfig):
     """
     # Step 1: Configure the compression model
     configurable = Configuration.from_runnable_config(config)
-    synthesizer_model = configurable_model.with_config(
-        {
-            "model": configurable.compression_model,
-            "max_tokens": configurable.compression_model_max_tokens,
-            "api_key": get_api_key_for_model(configurable.compression_model, config),
-            "tags": ["langsmith:nostream"],
-        }
+    researcher_messages = list(state.get("researcher_messages", []))
+    routing_text = get_buffer_string(
+        researcher_messages
+    )
+    model_decision=route_model_for_text(
+        task_type=TaskType.COMPRESSION,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
     )
 
+    compression_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
+
+    synthesizer_model = configurable_model.with_config(compression_model_config)
+
     # Step 2: Prepare messages for compression
-    researcher_messages = state.get("researcher_messages", [])
+    
 
     # Add instruction to switch from research mode to compression mode
     researcher_messages.append(
@@ -967,7 +1026,7 @@ async def compress_research(state: ResearcherState, config: RunnableConfig):
 
             # 上下文过长时，牺牲一次完整的研究过程，因为正常一般的研究过程就是一次AIMessage跟着多个ToolMessage
             # Handle token limit exceeded by removing older messages
-            if is_token_limit_exceeded(e, configurable.research_model):
+            if is_token_limit_exceeded(e, model_decision.model.model_name):
                 researcher_messages = remove_up_to_last_ai_message(researcher_messages)
                 continue
 
@@ -1050,14 +1109,40 @@ def get_actionable_evidence_gaps(
 # 检查搜索资料节点(总图)
 async def evidence_verifier(state: AgentState, config: RunnableConfig):
     configurable = Configuration.from_runnable_config(config)
-    verifier_model_config = {
-        "model": configurable.research_model,  # 暂时先使用researcher_model,后续再修改
-        "max_tokens": configurable.research_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.research_model, config),
-        "tags": ["langsmith:nostream"],  # 暂时不给前端具体的内部流程，后续可扩展
-    }
+    researcher_brief=state.get("research_brief","")
+    notes=state.get("notes",[])
+    raw_notes=state.get("raw_notes",[])
+    raw_notes_text = "\n".join(
+        str(note)
+        for note in raw_notes
+    )
+    notes_text="\n".join(
+        str(note) for note in notes
+    )
+    routing_text = (
+        researcher_brief
+        + "\n"
+        + notes_text
+        + "\n"
+        + raw_notes_text
+    )
+    model_decision = route_model_for_text(
+        task_type=TaskType.EVIDENCE_VERIFICATION,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+
+    verifier_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
+
     verification_model = (
-        configurable_model.with_structured_output(VerificationResult)
+        configurable_model.with_structured_output(
+            VerificationResult, method="function_calling"
+        )
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(verifier_model_config)
     )
@@ -1450,6 +1535,7 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
     """
     # Step 1: Extract research findings and prepare state cleanup
     notes = state.get("notes", [])
+    research_brief=state.get("research_brief","")
     cleared_state = {
         "notes": {"type": "override", "value": []}
     }  # 用于更新状态时把notes清空
@@ -1462,13 +1548,21 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
 
     # Step 2: Configure the final report generation model
     configurable = Configuration.from_runnable_config(config)
-    writer_model_config = {
-        "model": configurable.final_report_model,
-        "max_tokens": configurable.final_report_model_max_tokens,
-        "api_key": get_api_key_for_model(configurable.final_report_model, config),
-        # 最终报告允许流式输出，其他的，比如中间的思考过程就不必流式输出
-        # "tags": ["langsmith:nostream"],
-    }
+    routing_text=(research_brief+"\n"+findings+"\n"+verification_result_text)
+    model_decision = route_model_for_text(
+        task_type=TaskType.FINAL_REPORT,
+        text=routing_text,
+        dynamic_enabled=(configurable.model_router_dynamic_enabled),
+        prefer_low_cost=(configurable.model_router_prefer_low_cost),
+    )
+
+    writer_model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+        no_stream=False,
+    )
+
 
     # Step 3: Attempt report generation with token limit retry logic
     max_retries = 3
@@ -1499,25 +1593,37 @@ async def final_report_generation(state: AgentState, config: RunnableConfig):
             }
 
         except Exception as e:
+            token_limit_exceeded = is_token_limit_exceeded(
+                e,
+                model_decision.model.model_name,
+            )
+
+            print(
+                "[FINAL_REPORT_ERROR] "
+                f"model={model_decision.model.model_name!r} | "
+                f"attempt={current_retry + 1}/{max_retries + 1} | "
+                f"type={type(e).__name__} | "
+                f"token_limit={token_limit_exceeded} | "
+                f"error={e}"
+            )
             # Handle token limit exceeded errors with progressive truncation
-            if is_token_limit_exceeded(e, configurable.final_report_model):
+            if token_limit_exceeded:
                 current_retry += 1
 
                 if current_retry == 1:
                     # First retry: determine initial truncation limit
-                    model_token_limit = get_model_token_limit(
-                        configurable.final_report_model
-                    )
-                    if not model_token_limit:
-                        return {
-                            "final_report": f"Error generating final report: Token limit exceeded, however, we could not determine the model's maximum context length. Please update the model map in deep_researcher/utils.py with this information. {e}",
-                            "messages": [
-                                AIMessage(
-                                    content="Report generation failed due to token limits"
-                                )
-                            ],
-                            **cleared_state,
-                        }
+                    model_token_limit = model_decision.model.context_window
+                    # 理论上ModelSpec一定会有这个字段
+                    # if not model_token_limit:
+                    #     return {
+                    #         "final_report": f"Error generating final report: Token limit exceeded, however, we could not determine the model's maximum context length. Please update the model map in deep_researcher/utils.py with this information. {e}",
+                    #         "messages": [
+                    #             AIMessage(
+                    #                 content="Report generation failed due to token limits"
+                    #             )
+                    #         ],
+                    #         **cleared_state,
+                    #     }
                     # Use 4x token limit as character approximation for truncation
                     findings_token_limit = model_token_limit * 4
                 else:
@@ -1599,4 +1705,3 @@ deep_researcher_builder.add_edge("final_report_generation", END)  # Final exit p
 
 # Compile the complete deep researcher workflow
 deep_researcher = deep_researcher_builder.compile()
-
