@@ -113,6 +113,22 @@ class Configuration(BaseModel):
             }
         },
     )
+    # configuration.py
+    max_react_iterations: int = Field(
+        default=10,
+        metadata={
+            "x_oap_ui_config": {
+                "type": "slider",
+                "default": 10,
+                "min": 1,
+                "max": 30,
+                "step": 1,
+                "description": (
+                    "Maximum number of ReAct iterations for a single researcher."
+                ),
+            }
+        },
+    )
     # 单次targeted_research允许分配的最大任务数(也就是可以分配的最大researcher数)
     max_targeted_research_tasks_per_round: int = Field(
         default=3,
