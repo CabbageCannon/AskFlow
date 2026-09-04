@@ -74,6 +74,7 @@ from open_deep_research.model_router import (
     TaskType,
     route_model_for_text,
 )
+from pydantic import ValidationError
 
 # Initialize a configurable model that we will use throughout the agent
 configurable_model = init_chat_model(
@@ -1126,14 +1127,6 @@ async def evidence_verifier(state: AgentState, config: RunnableConfig):
         base_url=configurable.bailian_base_url,
     )
 
-    verification_model = (
-        configurable_model.with_structured_output(
-            VerificationResult, method="function_calling"
-        )
-        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
-        .with_config(verifier_model_config)
-    )
-
     # 准备verfier输入
     researcher_brief = state.get("research_brief", "")
     notes = state.get("notes", [])
@@ -1149,10 +1142,77 @@ async def evidence_verifier(state: AgentState, config: RunnableConfig):
         notes=notes_text,  # 最终final_report节点拿到的资料
         raw_notes=raw_notes_text,  # 原始材料
     )
-
-    verification_result = await verification_model.ainvoke(
-        [HumanMessage(content=prompt_content)]
+    
+    verification_model = (
+        configurable_model
+        .with_structured_output(
+            VerificationResult,
+            method="function_calling",
+        )
+        .with_config(verifier_model_config)
     )
+
+    verification_messages = [
+        HumanMessage(
+            content=prompt_content
+        )
+    ]
+
+    last_validation_error: ValidationError | None = None
+
+    for attempt in range(
+        1,
+        configurable.max_structured_output_retries + 1,
+    ):
+        try:
+            verification_result = (
+                await verification_model.ainvoke(
+                    verification_messages
+                )
+            )
+
+            break
+
+        except ValidationError as exc:
+            last_validation_error = exc
+
+            if (
+                attempt
+                >= configurable.max_structured_output_retries
+            ):
+                raise
+
+            verification_messages.append(
+                HumanMessage(
+                    content=(
+                        "Your previous structured output violated "
+                        "the semantic invariants of VerificationResult. "
+                        "Regenerate the COMPLETE VerificationResult object.\n\n"
+                        "You MUST obey all of these rules:\n"
+                        "1. If evidence_sufficient is false AND "
+                        "further_research_likely_to_help is true, "
+                        "evidence_gaps MUST contain at least one "
+                        "actionable EvidenceGap.\n"
+                        "2. If evidence_sufficient is false but you "
+                        "cannot identify any useful follow-up research, "
+                        "set further_research_likely_to_help to false.\n"
+                        "3. Never return:\n"
+                        "   evidence_sufficient=false,\n"
+                        "   further_research_likely_to_help=true,\n"
+                        "   evidence_gaps=[]\n"
+                        "4. Do not weaken your evaluation merely to "
+                        "satisfy the schema. If evidence is genuinely "
+                        "insufficient, keep it insufficient and describe "
+                        "the actionable gaps.\n\n"
+                        f"Validation error from the previous attempt:\n"
+                        f"{exc}"
+                    )
+                )
+            )
+
+    else:
+        assert last_validation_error is not None
+        raise last_validation_error
 
     print(
         "[EVIDENCE_VERIFIER] "

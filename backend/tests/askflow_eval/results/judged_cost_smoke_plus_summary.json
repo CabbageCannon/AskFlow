@@ -1,0 +1,122 @@
+{
+  "generated_at": "2026-09-04T09:03:04.144653+00:00",
+  "protocol": {
+    "judge_model": "qwen3.5-plus",
+    "structured_method": "function_calling",
+    "coverage_threshold": 0.8,
+    "pairwise_seed": 42,
+    "gap_min_information_gain": 0.3,
+    "gap_max_tasks_per_round": 3,
+    "gap_max_concurrent": 3,
+    "task_file": "D:\\agent学习\\AskFlow\\backend\\tests\\askflow_eval\\tasks.json",
+    "askflow_result_files": [
+      "D:\\agent学习\\AskFlow\\backend\\tests\\askflow_eval\\results\\askflow_cost_smoke_v2.jsonl"
+    ],
+    "baseline_result_files": [
+      "D:\\agent学习\\AskFlow-baseline\\backend\\tests\\askflow_eval\\results\\baseline_smoke_remaining.jsonl"
+    ]
+  },
+  "total_tasks": 1,
+  "askflow": {
+    "total_tasks": 1,
+    "execution_success_count": 1,
+    "execution_success_rate": 1.0,
+    "judged_count": 1,
+    "unjudged_count": 0,
+    "research_success_count": 0,
+    "research_success_rate": 0.0,
+    "research_success_rate_on_judged": 0.0,
+    "mean_aspect_coverage": 0.9,
+    "median_aspect_coverage": 0.9,
+    "mean_latency_seconds": 352.884,
+    "median_latency_seconds": 352.884,
+    "mean_logical_tool_calls": 3.0,
+    "median_logical_tool_calls": 3.0,
+    "mean_logical_tool_calls_on_research_success": null
+  },
+  "baseline": {
+    "total_tasks": 0,
+    "execution_success_count": 0,
+    "execution_success_rate": null,
+    "judged_count": 0,
+    "unjudged_count": 0,
+    "research_success_count": 0,
+    "research_success_rate": null,
+    "research_success_rate_on_judged": null,
+    "mean_aspect_coverage": null,
+    "median_aspect_coverage": null,
+    "mean_latency_seconds": null,
+    "median_latency_seconds": null,
+    "mean_logical_tool_calls": null,
+    "median_logical_tool_calls": null,
+    "mean_logical_tool_calls_on_research_success": null
+  },
+  "pairwise": {
+    "judged_pairs": 0,
+    "askflow_wins": 0,
+    "baseline_wins": 0,
+    "ties": 0,
+    "askflow_win_rate": null,
+    "baseline_win_rate": null,
+    "tie_rate": null,
+    "askflow_decisive_win_rate": null
+  },
+  "askflow_diagnostics": {
+    "mean_verification_rounds": 1.0,
+    "median_verification_rounds": 1.0,
+    "targeted_research_trigger_count": 0,
+    "targeted_research_trigger_rate": 0.0,
+    "gap_repair_applicable_tasks": 0,
+    "triggered_initial_actionable_gaps": 0,
+    "repaired_initial_actionable_gaps": 0,
+    "evidence_gap_repair_rate": null
+  },
+  "categories": {
+    "production_audit": {
+      "askflow": {
+        "total_tasks": 1,
+        "execution_success_count": 1,
+        "execution_success_rate": 1.0,
+        "judged_count": 1,
+        "unjudged_count": 0,
+        "research_success_count": 0,
+        "research_success_rate": 0.0,
+        "research_success_rate_on_judged": 0.0,
+        "mean_aspect_coverage": 0.9,
+        "median_aspect_coverage": 0.9,
+        "mean_latency_seconds": 352.884,
+        "median_latency_seconds": 352.884,
+        "mean_logical_tool_calls": 3.0,
+        "median_logical_tool_calls": 3.0,
+        "mean_logical_tool_calls_on_research_success": null
+      },
+      "baseline": {
+        "total_tasks": 0,
+        "execution_success_count": 0,
+        "execution_success_rate": null,
+        "judged_count": 0,
+        "unjudged_count": 0,
+        "research_success_count": 0,
+        "research_success_rate": null,
+        "research_success_rate_on_judged": null,
+        "mean_aspect_coverage": null,
+        "median_aspect_coverage": null,
+        "mean_latency_seconds": null,
+        "median_latency_seconds": null,
+        "mean_logical_tool_calls": null,
+        "median_logical_tool_calls": null,
+        "mean_logical_tool_calls_on_research_success": null
+      },
+      "pairwise": {
+        "judged_pairs": 0,
+        "askflow_wins": 0,
+        "baseline_wins": 0,
+        "ties": 0,
+        "askflow_win_rate": null,
+        "baseline_win_rate": null,
+        "tie_rate": null,
+        "askflow_decisive_win_rate": null
+      }
+    }
+  }
+}

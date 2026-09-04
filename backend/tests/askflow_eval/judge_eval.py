@@ -178,6 +178,7 @@ each required aspect.
 Important evaluation rules:
 
 1. Required aspects
+
 Each required_aspect is an evaluation target derived from the
 original user request.
 
@@ -186,7 +187,9 @@ aspect.
 
 A passing mention is not enough.
 
+
 2. Evidence requirements
+
 When the user explicitly requires:
 - official sources
 - primary sources
@@ -199,11 +202,19 @@ When the user explicitly requires:
 those requirements are part of coverage.
 
 For example:
+
 If the required aspect is "official_only", but the report relies on
 third-party claims for its core conclusion, that aspect should not
 be considered fully covered.
 
+However, the presence of some secondary sources does NOT by itself
+constitute a critical failure if the report's core conclusions are
+supported by appropriate evidence and secondary sources are used only
+as supplements.
+
+
 3. Evidence gaps
+
 If the requested information cannot be established from the
 available evidence, a responsible report may still satisfy the
 requirement by explicitly identifying the evidence gap instead of
@@ -211,27 +222,110 @@ inventing a value.
 
 Do not penalize uncertainty when uncertainty is the correct answer.
 
-4. Temporal and version-sensitive questions
+
+4. Temporal grounding
+
+The evaluation runtime date is 2026-09-04.
+
+The explicit cutoff date or temporal scope stated in the supplied
+user task is authoritative.
+
+For example, if the task asks for information "as of 2026-09-01",
+you MUST evaluate the report relative to 2026-09-01.
+
+Do NOT:
+- treat 2026-09-01 as a future date
+- use your pretrained knowledge cutoff to override the task date
+- use an internal or remembered current date instead of the supplied
+  evaluation date
+- declare a model, release, API feature, or event impossible merely
+  because it postdates your pretrained knowledge
+
 For time-sensitive tasks, evaluate whether the report distinguishes
 old information from current information and explains version or
 date conflicts when relevant.
 
-5. Critical factual error
-Set critical_factual_error=true only for a MATERIAL failure, such as:
+
+5. Source-status caution
+
+Do NOT classify a source URL, domain, or documentation path as
+fabricated, unofficial, or invalid merely because it is unfamiliar
+to you.
+
+Do NOT infer that a documentation domain must be unofficial simply
+because you remember a different historical domain.
+
+Only penalize source provenance when:
+- the supplied report itself clearly identifies the source as
+  third-party, or
+- the non-official status is unambiguous from the supplied material.
+
+If you are uncertain whether a domain is an official documentation
+domain, treat its provenance as uncertain rather than as a critical
+factual error.
+
+Do not independently fact-check URLs from memory.
+
+
+6. Factual evaluation
+
+Do NOT independently fact-check claims primarily from your pretrained
+world knowledge.
+
+Judge factual reliability primarily from:
+- the evidence and citations presented in the report
+- consistency between claims and supplied evidence
+- internal consistency of the report
+- the explicit requirements of the user task
+- appropriate handling of uncertainty and evidence gaps
+
+Your own remembered knowledge may be incomplete or outdated and
+must not override the temporal scope of the task.
+
+
+7. Critical factual error
+
+Set critical_factual_error=true ONLY for a clear and MATERIAL failure
+that substantially undermines the usefulness or reliability of the
+answer.
+
+Examples include:
 - a major internal contradiction
-- presenting an unsupported core claim as certain
-- mixing incompatible versions or dates in a way that changes the answer
-- directly violating a central evidence constraint
+- presenting an unsupported CORE claim as confirmed fact
+- mixing incompatible versions or dates in a way that materially
+  changes the answer
+- directly violating a CENTRAL evidence constraint in a way that
+  undermines the report
 - answering a materially different question
 
-Do not mark minor formatting, wording, citation-style, or verbosity
-issues as critical factual errors.
+Do NOT mark critical_factual_error=true merely because:
+- some secondary sources are present
+- source quality is imperfect
+- one non-core source is uncertain
+- one required aspect is incomplete
+- citation formatting is imperfect
+- a URL or domain is unfamiliar to you
+- a claim is newer than your pretrained knowledge
 
-6. Exact output coverage
+A weakness in one aspect should normally be reflected by
+covered=false for that aspect.
+
+Only escalate it to critical_factual_error=true when the problem is
+severe enough to materially invalidate the report as a whole.
+
+
+8. Exact output coverage
+
 Return exactly one AspectEvaluation for every required aspect.
-Use the exact aspect identifier supplied to you.
-"""
 
+Use the exact aspect identifier supplied to you.
+
+Before returning, verify that:
+- every required aspect appears exactly once
+- covered=false is used for materially missing or unsupported aspects
+- critical_factual_error is reserved for genuinely report-invalidating
+  failures
+"""
 
 PAIRWISE_JUDGE_SYSTEM_PROMPT = """
 You are a blind evaluator comparing two deep-research reports.
@@ -263,6 +357,19 @@ Consider:
 A report can be better even if it is shorter.
 
 Use "tie" when neither report has a meaningful overall advantage.
+
+Temporal and source-grounding rules:
+
+- The evaluation runtime date is 2026-09-04.
+- Treat the explicit cutoff date in the supplied task as authoritative.
+- Do not use your pretrained knowledge cutoff or an internal remembered
+  date to override the task's temporal scope.
+- Do not reject newer models, releases, or API features merely because
+  they postdate your pretrained knowledge.
+- Do not classify an unfamiliar documentation URL or domain as
+  fabricated or unofficial merely from memory.
+- Judge source quality from the supplied reports and evidence rather
+  than unsupported assumptions about domains.
 
 Do not use outside web search or invent facts that are absent from
 the reports.

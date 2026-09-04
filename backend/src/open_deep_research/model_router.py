@@ -141,56 +141,37 @@ class ModelSpec:
     extra_body: dict[str, Any] | None = None
 
 # 模型分类
-MODEL_CATALOG:tuple[ModelSpec,...]=(
+MODEL_CATALOG: tuple[ModelSpec, ...] = (
     ModelSpec(
-        model_name="openai:deepseek-v4-flash",
-        max_tokens=8192,
+        model_name="openai:qwen3.5-flash",
+        max_tokens=65_536,
         context_window=1_000_000,
         supports_tools=True,
         supports_structured_output=True,
-        input_cost_per_million=1.0,
+
+        # Beijing <=128K input tier.
+        # Used only as a lightweight router estimate.
+        input_cost_per_million=0.2,
         output_cost_per_million=2.0,
+
         extra_body={
             "enable_thinking": False,
         },
     ),
+
     ModelSpec(
-        model_name="openai:glm-5.2",
-        max_tokens=16_384,
-        context_window=1_048_576,
-        supports_tools=True,
-        supports_structured_output=True,
-        input_cost_per_million=8.0,
-        output_cost_per_million=28.0,
-        extra_body={
-            "enable_thinking": False,
-            "tool_stream": True,
-        },
-    ),
-    ModelSpec(
-        model_name="openai:qwen3.8-27b",
-        max_tokens=16_384,
+        model_name="openai:qwen3.5-plus",
+        max_tokens=65_536,
         context_window=1_000_000,
         supports_tools=True,
         supports_structured_output=True,
-        input_cost_per_million=3.0,
-        output_cost_per_million=12.0,
+
+        # Beijing <=128K input tier.
+        input_cost_per_million=0.8,
+        output_cost_per_million=4.8,
+
         extra_body={
             "enable_thinking": False,
-        },
-    ),
-    ModelSpec(
-        model_name="openai:MiniMax/MiniMax-M3",
-        max_tokens=16_384,
-        context_window=1_048_576,
-        supports_tools=True,
-        supports_structured_output=False,
-        input_cost_per_million=4.2,
-        output_cost_per_million=16.8,
-        extra_body={
-            "thinking": {
-                "type": "disabled",
-            }
         },
     ),
 )
@@ -224,24 +205,21 @@ MODEL_BY_NAME={
     for model in MODEL_CATALOG
 }
 
-# Fast使用deepseek-v4-flash
-# Reasoning使用glm-5.2
-# Long_context使用qwen3.8
-# Writing使用minmax
 PROFILE_MODELS = {
     ModelProfile.FAST: MODEL_BY_NAME[
-        "openai:deepseek-v4-flash"
+        "openai:qwen3.5-flash"
     ],
 
     ModelProfile.REASONING: MODEL_BY_NAME[
-        "openai:glm-5.2"
+        "openai:qwen3.5-plus"
     ],
 
     ModelProfile.SYNTHESIS: MODEL_BY_NAME[
-         "openai:qwen3.8-27b"
+        "openai:qwen3.5-flash"
     ],
+
     ModelProfile.WRITER: MODEL_BY_NAME[
-        "openai:MiniMax/MiniMax-M3"
+        "openai:qwen3.5-plus"
     ],
 }
 
@@ -556,31 +534,23 @@ class ModelScore:
 # 任务类型对于各模型偏好
 PROFILE_MODEL_AFFINITY = {
     ModelProfile.FAST: {
-        "openai:deepseek-v4-flash": 30,
-        "openai:qwen3.8-27b": 15,
-        "openai:glm-5.2": 8,
-        "openai:MiniMax/MiniMax-M3": 5,
+        "openai:qwen3.5-flash": 30,
+        "openai:qwen3.5-plus": 18,
     },
 
     ModelProfile.REASONING: {
-        "openai:glm-5.2": 30,
-        "openai:qwen3.8-27b": 20,
-        "openai:deepseek-v4-flash": 12,
-        "openai:MiniMax/MiniMax-M3": 8,
+        "openai:qwen3.5-plus": 30,
+        "openai:qwen3.5-flash": 18,
     },
 
     ModelProfile.SYNTHESIS: {
-        "openai:qwen3.8-27b": 30,
-        "openai:glm-5.2": 22,
-        "openai:MiniMax/MiniMax-M3": 18,
-        "openai:deepseek-v4-flash": 12,
+        "openai:qwen3.5-flash": 30,
+        "openai:qwen3.5-plus": 24,
     },
 
     ModelProfile.WRITER: {
-        "openai:MiniMax/MiniMax-M3": 30,
-        "openai:qwen3.8-27b": 22,
-        "openai:glm-5.2": 18,
-        "openai:deepseek-v4-flash": 10,
+        "openai:qwen3.5-plus": 30,
+        "openai:qwen3.5-flash": 20,
     },
 }
 

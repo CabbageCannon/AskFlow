@@ -472,6 +472,22 @@ evidence_gaps may also be empty.
 Be conservative and evidence-grounded.
 
 Your output is an audit of the existing research, not a new research report.
+
+CRITICAL OUTPUT INVARIANT:
+
+Before returning the VerificationResult, verify the following:
+
+- If evidence_sufficient == false AND
+  further_research_likely_to_help == true,
+  evidence_gaps MUST contain at least one actionable gap.
+
+- If no useful follow-up research can be identified,
+  further_research_likely_to_help MUST be false.
+
+Never return:
+evidence_sufficient=false
+further_research_likely_to_help=true
+evidence_gaps=[]
 """
 
 # 重新研究的prompt
