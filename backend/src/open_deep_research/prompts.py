@@ -351,6 +351,45 @@ Distinguish between:
 - evidence required to answer the question responsibly
 - evidence that would merely make the answer more comprehensive
 
+6. Follow-up Research Value
+
+Determine whether another targeted external research round is
+realistically likely to improve a MATERIAL unresolved issue.
+
+Set:
+
+further_research_likely_to_help = true
+
+when:
+- evidence is currently insufficient, weak, missing, or conflicting
+- the unresolved issue matters to the Research Brief
+- another focused external search has a realistic chance of finding
+  useful new evidence
+
+Set:
+
+further_research_likely_to_help = false
+
+when:
+- the evidence is already sufficient, or
+- the remaining weakness cannot realistically be improved through
+  additional external research, or
+- the remaining issue is only a writing/synthesis problem
+
+CRITICAL CONSISTENCY RULE:
+
+If:
+- evidence_sufficient = false
+- further_research_likely_to_help = true
+
+then evidence_gaps MUST contain at least one narrow actionable gap.
+
+A complete absence of source evidence for an externally researchable,
+material topic should normally result in:
+- evidence_sufficient = false
+- further_research_likely_to_help = true
+- at least one evidence_gap
+
 <Evidence Gap Identification>
 
 After evaluating the evidence, identify whether any important unresolved
@@ -423,10 +462,10 @@ Return at most 3 research gaps.
 Prefer the gaps with the highest combination of importance and expected
 information gain.
 
-If the evidence is already sufficient, research_gaps should normally be empty.
+If the evidence is already sufficient, evidence_gaps should normally be empty.
 
 If the evidence is insufficient but further research is unlikely to help,
-research_gaps may also be empty.
+evidence_gaps may also be empty.
 </Research Gap Identification>
 
 <Important>

@@ -1,12 +1,13 @@
 """Graph state definitions and data structures for the Deep Research agent."""
 
 import operator
-from typing import Annotated, Optional,Literal
+from typing import Annotated, Optional, Literal
 
 from langchain_core.messages import MessageLikeRepresentation
 from langgraph.graph import MessagesState
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing_extensions import TypedDict
+
 
 ###################
 # Structured Outputs
@@ -77,7 +78,7 @@ class CredibilityIssue(BaseModel):
 class EvidenceGap(BaseModel):
     """A specific unresolved research gap that may justify targeted follow-up research."""
 
-    gap_type:Literal["coverage","credibility","conflict"]=Field(
+    gap_type: Literal["coverage", "credibility", "conflict"] = Field(
         description=(
             "Type of evidence gap: "
             "'coverage' means an important topic is missing, "
@@ -121,6 +122,7 @@ class EvidenceGap(BaseModel):
         ),
     )
 
+
 # 审查结果
 class VerificationResult(BaseModel):
     # 是否覆盖了用户问题中的全部维度
@@ -137,7 +139,7 @@ class VerificationResult(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     # 重新搜索的任务列表
     evidence_gaps: list[EvidenceGap] = Field(
-        default_factory=list, # 默认值是[]
+        default_factory=list,  # 默认值是[]
         description=(
             "Specific actionable research gaps that could be resolved through "
             "targeted follow-up research."
@@ -145,12 +147,35 @@ class VerificationResult(BaseModel):
     )
     # 搜索资料是否满意
     evidence_sufficient: bool
+    # 继续研究是否有价值
+    further_research_likely_to_help: bool = Field(
+        description=(
+            "Whether another targeted external research round is "
+            "realistically likely to resolve at least one material "
+            "evidence deficiency."
+        )
+    )
     # 总结
     summary: str
+    
+    @model_validator(mode="after")
+    def validate_followup_consistency(self):
+        # 对于资料不满意并且继续搜索有价值但是却没有gaps视作非法行为
+        if(not self.evidence_sufficient
+           and self.further_research_likely_to_help
+           and not self.evidence_gaps):
+            raise ValueError(
+                "evidence_gaps must contain at least one "
+                "actionable gap when evidence is insufficient "
+                "and further research is likely to help."
+            )
+        return self
+
 
 # 再次研究来补充的研究任务
 class TargetedResearchTask(BaseModel):
     """A narrowly scoped follow-up task generated from an evidence gap."""
+
     gap_type: Literal["coverage", "credibility", "conflict"]
 
     # 缺口标识
@@ -175,7 +200,8 @@ class TargetedResearchTask(BaseModel):
             "and expected information gain."
         ),
     )
-    
+
+
 ###################
 # State Definitions
 ###################
@@ -213,15 +239,14 @@ class AgentState(MessagesState):
     verification_result: Optional[VerificationResult]
     # Evidence Verifier 已执行的次数。
     # 初次研究后的 verification 也计为一次。
-    verification_iterations:Annotated[int,operator.add]=0
+    verification_iterations: Annotated[int, operator.add] = 0
     # 再次研究的任务列表
-    targeted_research_tasks:list[TargetedResearchTask]=[]
+    targeted_research_tasks: list[TargetedResearchTask] = []
     # 调用了预算型工具的总次数
-    total_research_tool_calls:Annotated[
-        int,operator.add
-    ]=0
+    total_research_tool_calls: Annotated[int, operator.add] = 0
     # 最终给用户的研究报告
     final_report: str
+
 
 # supervisor子图状态
 class SupervisorState(TypedDict):
@@ -233,12 +258,13 @@ class SupervisorState(TypedDict):
     research_iterations: int = 0
     raw_notes: Annotated[list[str], override_reducer] = []
 
+
 # researcher子图状态
 class ResearcherState(TypedDict):
     """State for individual researchers conducting research."""
 
     # ResearcherState
-    react_iterations: Annotated[int, operator.add] = 0  
+    react_iterations: Annotated[int, operator.add] = 0
     # 预算型tool执行了的次数，即便执行失败了也算，并且这里如果execute_tool_safely中执行失败了重试，也不会额外增加，后续这里应该优化
     total_tool_calls: Annotated[int, operator.add] = 0
     researcher_messages: Annotated[list[MessageLikeRepresentation], operator.add]
@@ -249,6 +275,7 @@ class ResearcherState(TypedDict):
     # 搜索得到的原始材料
     raw_notes: Annotated[list[str], override_reducer] = []
 
+
 # researcher子图输出
 class ResearcherOutputState(BaseModel):
     """Output state from individual researchers."""
@@ -256,4 +283,4 @@ class ResearcherOutputState(BaseModel):
     compressed_research: str
     raw_notes: Annotated[list[str], override_reducer] = []
     # 调用了预算型工具的次数
-    total_tool_calls:int=0
+    total_tool_calls: int = 0

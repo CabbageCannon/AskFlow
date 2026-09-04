@@ -10,7 +10,8 @@ from open_deep_research.state import (
     TargetedResearchTask,
     VerificationResult,
 )
-
+import pytest
+from pydantic import ValidationError
 
 def patch_adaptive_config(monkeypatch, **overrides):
     config_values = {
@@ -42,15 +43,27 @@ def make_verification_result(
     *,
     sufficient=False,
     gaps=None,
+    further_research_likely_to_help=None,
 ):
+    gaps = gaps or []
+
+    if further_research_likely_to_help is None:
+        further_research_likely_to_help = (
+            not sufficient
+            and bool(gaps)
+        )
+
     return VerificationResult(
         coverage_score=0.7,
         credibility_score=0.8,
         credibility_issues=[],
         conflicts=[],
         missing_evidence=[],
-        evidence_gaps=gaps or [],
+        evidence_gaps=gaps,
         evidence_sufficient=sufficient,
+        further_research_likely_to_help=(
+            further_research_likely_to_help
+        ),
         summary="Fake verification result.",
     )
 
@@ -767,9 +780,7 @@ def test_full_adaptive_research_loop(
                 evidence_gaps=[
                     EvidenceGap(
                         gap_type="coverage",
-                        topic=(
-                            "Current DeepSeek API pricing"
-                        ),
+                        topic="Current DeepSeek API pricing",
                         reason=(
                             "Pricing is required by the "
                             "research brief but is not "
@@ -780,6 +791,10 @@ def test_full_adaptive_research_loop(
                     )
                 ],
                 evidence_sufficient=False,
+
+                # 新增
+                further_research_likely_to_help=True,
+
                 summary=(
                     "Evidence is strong but pricing "
                     "is still missing."
@@ -795,6 +810,10 @@ def test_full_adaptive_research_loop(
                 missing_evidence=[],
                 evidence_gaps=[],
                 evidence_sufficient=True,
+
+                # 新增
+                further_research_likely_to_help=False,
+
                 summary=(
                     "The evidence now sufficiently "
                     "covers the research brief."
@@ -1025,4 +1044,47 @@ def test_full_adaptive_research_loop(
     assert (
         result["final_report"]
         == "fake adaptive final report"
+    )
+    
+def test_verification_rejects_missing_gap_when_followup_is_useful():
+    with pytest.raises(ValidationError):
+        VerificationResult(
+            coverage_score=0.15,
+            credibility_score=0.10,
+            credibility_issues=[],
+            conflicts=[],
+            missing_evidence=[
+                "No official source evidence was found."
+            ],
+            evidence_gaps=[],
+            evidence_sufficient=False,
+            further_research_likely_to_help=True,
+            summary="Evidence is insufficient.",
+        )
+        
+def test_router_stops_when_further_research_is_unlikely(
+    monkeypatch,
+):
+    patch_adaptive_config(monkeypatch)
+
+    state = {
+        "verification_iterations": 1,
+        "verification_result":
+            make_verification_result(
+                sufficient=False,
+                gaps=[],
+                further_research_likely_to_help=False,
+            ),
+    }
+
+    result = asyncio.run(
+        dr.route_after_verification(
+            state,
+            {},
+        )
+    )
+
+    assert (
+        result.goto
+        == "final_report_generation"
     )

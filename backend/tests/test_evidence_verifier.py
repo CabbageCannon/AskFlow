@@ -4,6 +4,7 @@ from open_deep_research.state import (
     CredibilityIssue,
     EvidenceConflict,
     VerificationResult,
+    EvidenceGap
 )
 from langchain_core.messages import AIMessage
 from langgraph.graph import START, END, StateGraph
@@ -90,6 +91,7 @@ def test_evidence_verifier_sufficient_evidence(monkeypatch):
         conflicts=[],
         missing_evidence=[],
         evidence_sufficient=True,
+        further_research_likely_to_help=False,
         summary=("The research is well covered and supported " "by credible sources."),
     )
 
@@ -182,7 +184,20 @@ def test_evidence_verifier_insufficient_evidence(monkeypatch):
             "No evidence was provided for deployment comparison.",
             "No benchmark or primary evidence supports the performance claim.",
         ],
+        evidence_gaps=[
+            EvidenceGap(
+                gap_type="coverage",
+                topic="Framework B architecture and deployment evidence",
+                reason=(
+                    "Important parts of the research brief are missing "
+                    "and could realistically be resolved with additional research."
+                ),
+                importance=0.9,
+                expected_information_gain=0.8,
+            )
+        ],
         evidence_sufficient=False,
+        further_research_likely_to_help=True,
         summary=(
             "The research covers only part of the brief and several important "
             "claims lack sufficient supporting evidence."
@@ -271,7 +286,21 @@ def test_evidence_verifier_detects_source_conflict(monkeypatch):
             )
         ],
         missing_evidence=[],
+        evidence_gaps=[
+            EvidenceGap(
+                gap_type="conflict",
+                topic="Framework A throughput discrepancy",
+                reason=(
+                    "Two credible sources report materially different "
+                    "throughput values and additional research could "
+                    "identify differences in version, methodology, or conditions."
+                ),
+                importance=0.95,
+                expected_information_gain=0.8,
+            )
+        ],
         evidence_sufficient=False,
+        further_research_likely_to_help=True,
         summary=(
             "The research covers the requested topic and uses credible sources, "
             "but a material performance conflict remains unresolved."
@@ -389,6 +418,7 @@ def test_final_report_receives_verification_result(monkeypatch):
             "The conflict has not been independently resolved."
         ],
         evidence_sufficient=True,
+        further_research_likely_to_help=False,
         summary=(
             "The evidence is sufficient for a cautious final answer, "
             "but the throughput conflict must be disclosed."
@@ -460,6 +490,7 @@ def test_graph_routes_research_through_verifier_before_writer(
         conflicts=[],
         missing_evidence=[],
         evidence_sufficient=True,
+        further_research_likely_to_help=False,
         summary="Evidence is sufficient.",
     )
 

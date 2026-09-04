@@ -1210,6 +1210,21 @@ async def route_after_verification(
         )
 
         return Command(goto="final_report_generation")
+    
+    # 4.不期望继续搜索了
+    if (
+        not verification_result
+        .further_research_likely_to_help
+    ):
+        print(
+            "[ADAPTIVE_RESEARCH] "
+            "route -> final_report_generation | "
+            "reason=further_research_unlikely_to_help"
+        )
+
+        return Command(
+            goto="final_report_generation"
+        )
 
     # 拿到有价值的gap
     actionable_gaps = get_actionable_evidence_gaps(
