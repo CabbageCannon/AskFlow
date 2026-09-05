@@ -92,27 +92,52 @@ async def tavily_search(
     # Step 3: Set up the summarization model with configuration
     configurable = Configuration.from_runnable_config(config)
 
-    # Character limit to stay within model token limits (configurable)
     max_char_to_include = configurable.max_content_length
 
-    # Initialize summarization model with retry logic
-    routing_text = result["raw_content"][:max_char_to_include]
+    # 一次 search 只选择和创建一次 summarization model
+    routing_text = "\n".join(queries)
 
-    # Step 4: Create summarization tasks (skip empty content)
+    model_decision = route_model_for_text(
+        task_type=TaskType.WEBPAGE_SUMMARIZATION,
+        text=routing_text,
+        dynamic_enabled=configurable.model_router_dynamic_enabled,
+        prefer_low_cost=configurable.model_router_prefer_low_cost,
+    )
+
+    model_config = build_routed_model_runtime_config(
+        model_decision,
+        api_key=configurable.bailian_api_key,
+        base_url=configurable.bailian_base_url,
+    )
+
+    summarization_model = (
+        init_chat_model(**model_config)
+        .with_structured_output(
+            Summary,
+            method="function_calling",
+        )
+        .with_retry(
+            stop_after_attempt=configurable.max_structured_output_retries
+        )
+    )
+
+    # Step 4
     async def noop():
-        """No-op function for results without raw content."""
         return None
 
     summarization_tasks = [
         (
             noop()
             if not result.get("raw_content")
-            else summarize_webpage(result["raw_content"][:max_char_to_include], config)
+            else summarize_webpage(
+                summarization_model,
+                result["raw_content"][:max_char_to_include],
+            )
         )
         for result in unique_results.values()
     ]
 
-    # Step 5: Execute all summarization tasks in parallel
+    # Step 5
     summaries = await asyncio.gather(*summarization_tasks)
 
     # Step 6: Combine results with their summaries
@@ -178,63 +203,25 @@ async def tavily_search_async(
     return search_results
 
 
-async def summarize_webpage(webpage_content: str, config: RunnableConfig) -> str:
-    """Summarize webpage content using AI model with timeout protection.
-
-    Args:
-        model: The chat model configured for summarization
-        webpage_content: Raw webpage content to be summarized
-
-    Returns:
-        Formatted summary with key excerpts, or original content if summarization fails
-    """
+async def summarize_webpage(
+    model: BaseChatModel,
+    webpage_content: str,
+) -> str:
+    """Summarize webpage content using the shared model."""
     try:
-        configurable = Configuration.from_runnable_config(config)
-        model_decision = route_model_for_text(
-            task_type=(TaskType.WEBPAGE_SUMMARIZATION),
-            text=webpage_content,
-            dynamic_enabled=(configurable.model_router_dynamic_enabled),
-            prefer_low_cost=(configurable.model_router_prefer_low_cost),
-        )
-        model_config = (
-            build_routed_model_runtime_config(
-                model_decision,
-                api_key=(
-                    configurable.bailian_api_key
-                ),
-                base_url=(
-                    configurable.bailian_base_url
-                ),
-            )
-        )
-        summarization_model = (
-            init_chat_model(
-                **model_config
-            )
-            .with_structured_output(
-                Summary,
-                method="function_calling",
-            )
-            .with_retry(
-                stop_after_attempt=(
-                    configurable
-                    .max_structured_output_retries
-                )
-            )
-        )
-        # Create prompt with current date context
         prompt_content = summarize_webpage_prompt.format(
-            webpage_content=webpage_content, date=get_today_str()
+            webpage_content=webpage_content,
+            date=get_today_str(),
         )
 
-        # Execute summarization with timeout to prevent hanging
         summary = await asyncio.wait_for(
-            summarization_model.ainvoke([HumanMessage(content=prompt_content)]),
-            timeout=60.0,  # 60 second timeout for summarization
+            model.ainvoke(
+                [HumanMessage(content=prompt_content)]
+            ),
+            timeout=60.0,
         )
 
-        # Format the summary with structured sections
-        formatted_summary =  (
+        return (
             f"<summary>\n"
             f"{summary.summary}\n"
             f"</summary>\n\n"
@@ -243,22 +230,17 @@ async def summarize_webpage(webpage_content: str, config: RunnableConfig) -> str
             f"</key_excerpts>"
         )
 
-        return formatted_summary
-
     except asyncio.TimeoutError:
-        # Timeout during summarization - return original content
         logging.warning(
-            "Summarization timed out after "
-            "60 seconds, returning original "
-            "content"
+            "Summarization timed out after 60 seconds, "
+            "returning original content"
         )
         return webpage_content
+
     except Exception as e:
-        # Other errors during summarization - log and return original content
         logging.warning(
-            "Summarization failed with error: "
-            f"{str(e)}, returning original "
-            "content"
+            f"Summarization failed with error: {str(e)}, "
+            "returning original content"
         )
         return webpage_content
 

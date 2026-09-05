@@ -3,6 +3,7 @@
 import asyncio
 from typing import Literal, Any
 import random
+from pydantic import ValidationError
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import (

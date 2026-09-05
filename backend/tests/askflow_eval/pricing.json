@@ -1,0 +1,125 @@
+{
+  "effective_date": "2026-09-05",
+  "currency": "CNY",
+  "pricing_basis": "public_list_price_reference",
+  "notes": [
+    "Model prices use Alibaba Cloud Model Studio public list prices for China (Beijing) where available.",
+    "Tavily uses the public pay-as-you-go reference price: USD 0.008 per credit. AskFlow currently omits search_depth, so Tavily defaults to basic search at 1 credit per request.",
+    "Tavily USD cost is converted to CNY with the 2026-09-04 USD/CNY reference value 6.7109 so all serving costs share one reporting currency.",
+    "This snapshot is for controlled evaluation comparability and is not an assertion about the evaluator account's actual invoice or plan discounts.",
+    "Tiered model prices are selected independently for each real LLM request using that request's input token count; benchmark totals are never used to choose a pricing tier."
+  ],
+  "fx": {
+    "USD_CNY": 6.7109,
+    "as_of": "2026-09-04",
+    "source": "https://www.investing.com/currencies/usd-cny-historical-data"
+  },
+  "models": {
+    "deepseek-v4-flash": {
+      "aliases": [
+        "openai:deepseek-v4-flash"
+      ],
+      "input_per_million": 1.0,
+      "cached_input_per_million": 0.2,
+      "output_per_million": 2.0,
+      "region": "cn-beijing",
+      "source": "https://help.aliyun.com/zh/model-studio/deepseek-v4-flash"
+    },
+    "glm-5.2": {
+      "aliases": [
+        "openai:glm-5.2",
+        "ZHIPU/GLM-5.2"
+      ],
+      "input_per_million": 8.0,
+      "cached_input_per_million": 2.0,
+      "output_per_million": 28.0,
+      "region": "cn-beijing",
+      "source": "https://help.aliyun.com/zh/model-studio/glm-5-2"
+    },
+    "qwen3.8-27b": {
+      "aliases": [
+        "openai:qwen3.8-27b"
+      ],
+      "input_per_million": 3.0,
+      "cached_input_per_million": 0.6,
+      "output_per_million": 12.0,
+      "region": "cn-beijing",
+      "source": "https://help.aliyun.com/zh/model-studio/qwen3-8-27b"
+    },
+    "MiniMax/MiniMax-M3": {
+      "aliases": [
+        "openai:MiniMax/MiniMax-M3",
+        "minimax/minimax-m3"
+      ],
+      "input_per_million": 4.2,
+      "cached_input_per_million": 0.84,
+      "output_per_million": 16.8,
+      "region": "cn-beijing",
+      "source": "https://help.aliyun.com/zh/model-studio/minimax-m3"
+    },
+    "qwen3.5-flash": {
+      "aliases": [
+        "openai:qwen3.5-flash"
+      ],
+      "region": "cn-beijing",
+      "tiers": [
+        {
+          "max_input_tokens": 128000,
+          "input_per_million": 0.2,
+          "cached_input_per_million": 0.02,
+          "output_per_million": 2.0
+        },
+        {
+          "max_input_tokens": 256000,
+          "input_per_million": 0.8,
+          "cached_input_per_million": 0.08,
+          "output_per_million": 8.0
+        },
+        {
+          "max_input_tokens": 1000000,
+          "input_per_million": 1.2,
+          "cached_input_per_million": 0.12,
+          "output_per_million": 12.0
+        }
+      ],
+      "source": "https://help.aliyun.com/en/model-studio/qwen3-5-flash"
+    },
+    "qwen3.5-plus": {
+      "aliases": [
+        "openai:qwen3.5-plus"
+      ],
+      "region": "cn-beijing",
+      "tiers": [
+        {
+          "max_input_tokens": 128000,
+          "input_per_million": 0.8,
+          "cached_input_per_million": 0.08,
+          "output_per_million": 4.8
+        },
+        {
+          "max_input_tokens": 256000,
+          "input_per_million": 2.0,
+          "cached_input_per_million": 0.2,
+          "output_per_million": 12.0
+        },
+        {
+          "max_input_tokens": 1000000,
+          "input_per_million": 4.0,
+          "cached_input_per_million": 0.4,
+          "output_per_million": 24.0
+        }
+      ],
+      "source": "https://help.aliyun.com/zh/model-studio/qwen3-5-plus"
+    }
+  },
+  "search": {
+    "tavily": {
+      "unit": "basic_search_request",
+      "credits_per_request": 1,
+      "usd_per_credit": 0.008,
+      "usd_cny": 6.7109,
+      "cost_per_request": 0.0536872,
+      "source": "https://docs.tavily.com/documentation/api-credits"
+    }
+  }
+}
