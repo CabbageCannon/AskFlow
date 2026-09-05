@@ -37,6 +37,12 @@ from tavily import AsyncTavilyClient
 try:
     from .experiment_groups import ExperimentGroup, resolve_experiment_group
     from .pricing import load_pricing_snapshot
+    from .node_timing import (
+        NodeTimingCallbackHandler,
+        NodeTimingCollector,
+        reset_current_node_timing_collector,
+        set_current_node_timing_collector,
+    )
     from .usage_tracking import (
         EvalUsageCallbackHandler,
         EvalUsageTracker,
@@ -48,6 +54,12 @@ try:
 except ImportError:
     from experiment_groups import ExperimentGroup, resolve_experiment_group
     from pricing import load_pricing_snapshot
+    from node_timing import (
+        NodeTimingCallbackHandler,
+        NodeTimingCollector,
+        reset_current_node_timing_collector,
+        set_current_node_timing_collector,
+    )
     from usage_tracking import (
         EvalUsageCallbackHandler,
         EvalUsageTracker,
@@ -529,13 +541,24 @@ async def run_one_task(
     usage_handler = EvalUsageCallbackHandler(usage_tracker)
     usage_token = set_current_usage_tracker(usage_tracker)
 
+    node_timing_collector = NodeTimingCollector()
+    node_timing_handler = NodeTimingCallbackHandler(
+        node_timing_collector
+    )
+    node_timing_token = set_current_node_timing_collector(
+        node_timing_collector
+    )
+
     graph = dr.deep_researcher_builder.compile(
         checkpointer=MemorySaver()
     )
 
     config = build_runtime_config(group)
     task_run_id = str(config["configurable"]["thread_id"])
-    config["callbacks"] = [usage_handler]
+    config["callbacks"] = [
+        usage_handler,
+        node_timing_handler,
+    ]
 
     start = time.perf_counter()
     error: str | None = None
@@ -573,10 +596,14 @@ async def run_one_task(
         )
         _CURRENT_METRICS.reset(metrics_token)
         reset_current_usage_tracker(usage_token)
+        reset_current_node_timing_collector(
+            node_timing_token
+        )
 
     api_usage = usage_tracker.snapshot(
         PRICING_SNAPSHOT
     )
+    node_timing = node_timing_collector.snapshot()
 
     final_report = str(
         final_state.get("final_report", "")
@@ -634,6 +661,10 @@ async def run_one_task(
             latency_seconds,
             3,
         ),
+        # Inclusive graph-node work. This may exceed E2E wall-clock
+        # latency because nodes can overlap and subgraph nodes contain
+        # child-node execution.
+        **node_timing,
         "logical_tool_calls": (
             metrics.logical_tool_calls
         ),
@@ -723,6 +754,8 @@ async def run_suite(
             f"task={result['task_id']} | "
             f"ok={result['execution_success']} | "
             f"latency={result['latency_seconds']}s | "
+            f"aggregate_node_work="
+            f"{result['aggregate_recorded_node_seconds']}s | "
             f"tool_calls={result['logical_tool_calls']} | "
             f"llm_calls={result['llm_calls']} | "
             f"search_requests={result['external_search_requests']} | "

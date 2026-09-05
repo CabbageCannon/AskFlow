@@ -633,6 +633,80 @@ def safe_median(
     )
 
 
+def safe_percentile(
+    values: list[float],
+    percentile: float,
+) -> float | None:
+    """Return a deterministic linear-interpolated percentile."""
+
+    if not values:
+        return None
+    if not 0.0 <= percentile <= 1.0:
+        raise ValueError("percentile must be between 0.0 and 1.0")
+
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(ordered[0], 4)
+
+    position = (len(ordered) - 1) * percentile
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(ordered) - 1)
+    fraction = position - lower_index
+    value = ordered[lower_index] + (
+        ordered[upper_index] - ordered[lower_index]
+    ) * fraction
+    return round(value, 4)
+
+
+def summarize_node_latency(
+    agent_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate raw node timing without claiming wall-clock attribution."""
+
+    node_names = sorted({
+        str(node)
+        for record in agent_rows
+        for node in (record.get("node_latency", {}) or {})
+    })
+    output: dict[str, Any] = {}
+
+    for node in node_names:
+        per_task_totals = [
+            float(
+                (record.get("node_latency", {}) or {})
+                .get(node, {})
+                .get("total_seconds", 0.0)
+                or 0.0
+            )
+            for record in agent_rows
+        ]
+        invocation_values = [
+            float(event.get("duration_seconds", 0.0) or 0.0)
+            for record in agent_rows
+            for event in (record.get("node_timings", []) or [])
+            if event.get("node") == node
+        ]
+        total_calls = sum(
+            int(
+                (record.get("node_latency", {}) or {})
+                .get(node, {})
+                .get("calls", 0)
+                or 0
+            )
+            for record in agent_rows
+        )
+        output[node] = {
+            "mean_total_seconds_per_task": safe_mean(per_task_totals),
+            "median_total_seconds_per_task": safe_median(per_task_totals),
+            "mean_invocation_seconds": safe_mean(invocation_values),
+            "p50_invocation_seconds": safe_percentile(invocation_values, 0.50),
+            "p95_invocation_seconds": safe_percentile(invocation_values, 0.95),
+            "total_calls": total_calls,
+        }
+
+    return output
+
+
 def deterministic_rng(
     task_id: str,
     seed: int,
@@ -1599,6 +1673,14 @@ def summarize_agent(
         is not None
     ]
 
+    aggregate_node_work_values = [
+        float(record.get("aggregate_recorded_node_seconds", 0.0) or 0.0)
+        for record in agent_rows
+        if record.get("aggregate_recorded_node_seconds") is not None
+    ]
+
+    node_latency_summary = summarize_node_latency(agent_rows)
+
     tool_call_values = [
         float(
             record.get(
@@ -1698,6 +1780,19 @@ def summarize_agent(
         "median_latency_seconds": safe_median(
             latency_values
         ),
+        "mean_end_to_end_latency": safe_mean(
+            latency_values
+        ),
+        "median_end_to_end_latency": safe_median(
+            latency_values
+        ),
+        "mean_aggregate_recorded_node_seconds": safe_mean(
+            aggregate_node_work_values
+        ),
+        "median_aggregate_recorded_node_seconds": safe_median(
+            aggregate_node_work_values
+        ),
+        "node_latency_summary": node_latency_summary,
         "mean_logical_tool_calls": safe_mean(
             tool_call_values
         ),
@@ -1993,6 +2088,17 @@ def build_agent_record(
         ),
         "latency_seconds": raw_record.get(
             "latency_seconds"
+        ),
+        "aggregate_recorded_node_seconds": raw_record.get(
+            "aggregate_recorded_node_seconds"
+        ),
+        "node_latency": raw_record.get(
+            "node_latency",
+            {},
+        ),
+        "node_timings": raw_record.get(
+            "node_timings",
+            [],
         ),
         "logical_tool_calls": raw_record.get(
             "logical_tool_calls"
